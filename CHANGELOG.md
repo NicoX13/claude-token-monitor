@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-05-07
+
+### Added
+- **Anthropic-style "Plan-Nutzungslimits" panel.** The popover now
+  mirrors the layout of claude.ai/usage:
+    1. **Aktuelle Sitzung** with `XX % verwendet` and
+       "Zurücksetzung in Y Std. Z Min." copy.
+    2. **Wöchentliche Limits** with three rows:
+       - *Alle Modelle* — total tokens between Mon 06:00 resets.
+       - *Nur Sonnet* — Sonnet-only filter.
+       - *Nur Opus* — Opus-only filter.
+       Each row gets its own `XX % verwendet` indicator and an
+       Anthropic-style "Zurücksetzung Mo., 06:00" label.
+- Weekly window now resets at **Monday 06:00 local time** (was
+  Monday 00:00), matching the dashboard's actual rollover.
+- `weeklyAllLimit` / `weeklySonnetLimit` / `weeklyOpusLimit` per
+  plan tier in `SessionPlan`. Calibrated against a Max 5× sample
+  showing 6 % at ~100 M total weekly tokens → ~1.7 Mrd cap.
+
+### Changed
+- Removed the per-period "Heute / Woche / Monat / Gesamt" grid
+  from the popover — the new weekly-limits section is the better
+  signal for "am I close to my cap?" and the historical totals
+  added clutter without being actionable.
+- Removed the per-model "Top 5" breakdown from the popover for
+  the same reason. (Per-model figures are still visible via the
+  Sonnet / Opus rows.)
+
+### Note on "Claude Design"
+The Anthropic dashboard shows a third weekly row labelled
+"Claude Design". From the user's data we determined this is a
+separate Anthropic *feature* (likely Artifacts / canvas tooling),
+not a model family — a user with 100 % Opus traffic still sees
+"Claude Design: noch nicht genutzt". We render the row as
+"Nur Opus" instead, which is what the local JSONL data
+actually supports. The percentage on that row may not match
+the dashboard exactly because Anthropic's pool sharing between
+Sonnet and Opus is not visible from outside the API.
+
 ## [1.2.0] — 2026-05-07
 
 ### Changed

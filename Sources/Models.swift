@@ -63,7 +63,23 @@ struct UsageReport {
     /// arrived to start the next one yet).
     let isSessionActive: Bool
     let today: UsageBucket
+
+    // MARK: Weekly limits (mirror claude.ai's "Wöchentliche Limits" panel).
+    // The week resets every Monday at 06:00 local time. We track three
+    // buckets so the UI can show the same breakdown the dashboard uses:
+    //   - all models  ("Alle Modelle")
+    //   - Sonnet only ("Nur Sonnet")
+    //   - Opus / Claude Design ("Claude Design")
+    /// All assistant messages since the previous Mon 06:00, regardless of model.
     let week: UsageBucket
+    /// Subset of `week` filtered to Sonnet variants only.
+    let weekSonnet: UsageBucket
+    /// Subset of `week` filtered to Opus variants — labelled "Claude Design"
+    /// in the Anthropic dashboard.
+    let weekOpus: UsageBucket
+    /// Next Monday at 06:00 local time.
+    let weekResetAt: Date
+
     let month: UsageBucket
     let allTime: UsageBucket
     let lastMessageAt: Date?
@@ -72,6 +88,10 @@ struct UsageReport {
     /// User-configured session token allowance (e.g. Pro / Max 5x / Max 20x).
     /// `nil` means "don't display a limit, just the raw count".
     let sessionTokenLimit: Int?
+    /// Weekly limits per category. `nil` when the user picked "Prozent-Anzeige aus".
+    let weeklyAllLimit: Int?
+    let weeklySonnetLimit: Int?
+    let weeklyOpusLimit: Int?
 }
 
 /// User-selectable plan presets. Anthropic does not publish hard token caps;
@@ -92,11 +112,47 @@ enum SessionPlan: String, CaseIterable {
     case max20x = "max20x"
     case hidden = "hidden"
 
+    /// Per-5h-session token allowance.
     var tokenLimit: Int? {
         switch self {
         case .pro:    return    66_000_000
         case .max5x:  return   330_000_000
         case .max20x: return 1_320_000_000
+        case .hidden: return nil
+        }
+    }
+
+    /// Weekly "all models" cap — total tokens used between Mon 06:00 resets.
+    /// Calibrated against a Max 5× sample showing 6 % at ~100 M tokens.
+    var weeklyAllLimit: Int? {
+        switch self {
+        case .pro:    return    340_000_000
+        case .max5x:  return  1_700_000_000
+        case .max20x: return  6_800_000_000
+        case .hidden: return nil
+        }
+    }
+
+    /// Weekly "Sonnet only" cap. Anthropic gives Sonnet a separate, larger
+    /// pool so heavy Sonnet users don't exhaust the all-models limit.
+    /// Calibrated against the same sample showing 2 % at ~100 M Sonnet
+    /// tokens → ~5 Mrd cap on Max 5×.
+    var weeklySonnetLimit: Int? {
+        switch self {
+        case .pro:    return  1_000_000_000
+        case .max5x:  return  5_000_000_000
+        case .max20x: return 20_000_000_000
+        case .hidden: return nil
+        }
+    }
+
+    /// Weekly "Opus / Claude Design" cap. Smaller pool because Opus is
+    /// the more expensive model. Estimate.
+    var weeklyOpusLimit: Int? {
+        switch self {
+        case .pro:    return    100_000_000
+        case .max5x:  return    500_000_000
+        case .max20x: return  2_000_000_000
         case .hidden: return nil
         }
     }

@@ -13,9 +13,7 @@ struct PopoverView: View {
             if let r = model.report {
                 sessionSection(r)
                 Divider()
-                periodGrid(r)
-                Divider()
-                modelBreakdown(r)
+                weeklyLimitsSection(r)
                 Divider()
                 footer(r)
             } else {
@@ -26,7 +24,7 @@ struct PopoverView: View {
             }
         }
         .padding(16)
-        .frame(width: 360)
+        .frame(width: 380)
         .onReceive(refreshTimer) { tick = $0 }
     }
 
@@ -63,72 +61,74 @@ struct PopoverView: View {
             let v = Double(r.session.totalTokens) / Double(limit)
             return Int((min(1.0, max(0.0, v)) * 100).rounded())
         }()
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(verbatim: r.isSessionActive
-                     ? "Aktuelle Sitzung"
-                     : "Letzte Sitzung (abgelaufen)")
+                Text(verbatim: "Plan-Nutzungslimits")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                if let reset = r.sessionResetAt {
-                    Text(verbatim: r.isSessionActive
-                         ? "Reset \(Formatter.clockTime(reset))"
-                         : "Endete \(Formatter.clockTime(reset))")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            // Hero row: percent if a plan is set, otherwise the token count.
-            HStack(alignment: .firstTextBaseline) {
-                if let p = percent {
-                    Text(verbatim: "\(p) %")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundColor(p > 85 ? .orange : .primary)
-                    Text("verwendet")
-                        .font(.callout)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text(Formatter.full(r.session.totalTokens))
-                        .font(.system(size: 28, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                    Text("Tokens")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-            }
-
-            // Token-quota progress (only if a plan limit is set)
-            if let p = percent {
-                ProgressView(value: Double(p) / 100.0)
-                    .tint(p > 85 ? .orange : .accentColor)
-            }
-
-            // Sub-line: tokens & messages as raw figures (always shown).
-            Text(verbatim: "\(Formatter.compact(r.session.totalTokens)) Tokens · \(r.session.messageCount) Nachr.")
-                .font(.caption.monospacedDigit())
-                .foregroundColor(.secondary)
-
-            // Time-line: countdown when active, "ended X ago" when expired.
-            if let reset = r.sessionResetAt {
-                if r.isSessionActive {
-                    let remaining = max(0, reset.timeIntervalSince(tick))
-                    Text(verbatim: "Reset in \(timeRemainingString(remaining))")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text(verbatim: "Beendet \(elapsedSinceString(reset, now: tick)) — wartet auf nächsten Prompt")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            } else {
-                Text(verbatim: "Noch keine Sitzung erfasst.")
+                Text(verbatim: planLabel(r))
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+
+            // Aktuelle Sitzung row in Anthropic style.
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(verbatim: r.isSessionActive
+                             ? "Aktuelle Sitzung"
+                             : "Letzte Sitzung (abgelaufen)")
+                            .font(.callout.weight(.semibold))
+                        if let reset = r.sessionResetAt {
+                            if r.isSessionActive {
+                                Text(verbatim: "Zurücksetzung in \(remainingString(reset.timeIntervalSince(tick)))")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text(verbatim: "Beendet \(elapsedSinceString(reset, now: tick))")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else {
+                            Text(verbatim: "Noch keine Sitzung erfasst")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Spacer()
+                    if let p = percent {
+                        Text(verbatim: "\(p) % verwendet")
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(p > 85 ? .orange : .secondary)
+                    } else {
+                        Text(verbatim: "\(Formatter.compact(r.session.totalTokens)) Tokens")
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(.secondary)
+                    }
+                }
+                if let p = percent {
+                    ProgressView(value: Double(p) / 100.0)
+                        .tint(p > 85 ? .orange : .accentColor)
+                } else {
+                    ProgressView(value: 0).tint(.gray)
+                }
+            }
         }
+    }
+
+    private func planLabel(_ r: UsageReport) -> String {
+        let raw = UserDefaults.standard.string(forKey: "SessionPlan") ?? SessionPlan.max5x.rawValue
+        return SessionPlan(rawValue: raw)?.displayName ?? "Max 5×"
+    }
+
+    /// "3 Std. 16 Min." — matches Anthropic copy.
+    private func remainingString(_ s: TimeInterval) -> String {
+        let total = max(0, Int(s))
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        if h > 0 { return "\(h) Std. \(m) Min." }
+        if m > 0 { return "\(m) Min." }
+        return "\(total) Sek."
     }
 
     private func elapsedSinceString(_ then: Date, now: Date) -> String {
@@ -147,104 +147,88 @@ struct PopoverView: View {
         return "\(sec) s"
     }
 
-    // MARK: - Period Grid
+    // MARK: - Weekly limits (Anthropic dashboard parity)
 
     @ViewBuilder
-    private func periodGrid(_ r: UsageReport) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Verbrauch")
+    private func weeklyLimitsSection(_ r: UsageReport) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(verbatim: "Wöchentliche Limits")
                 .font(.subheadline.weight(.semibold))
-            VStack(spacing: 0) {
-                periodRow("Heute",  bucket: r.today)
-                periodRow("Woche",  bucket: r.week)
-                periodRow("Monat",  bucket: r.month)
-                periodRow("Gesamt", bucket: r.allTime, isLast: true)
-            }
-            .background(Color.secondary.opacity(0.06))
-            .cornerRadius(8)
+
+            limitRow(label: "Alle Modelle",
+                     bucket: r.week,
+                     limit: r.weeklyAllLimit,
+                     resetAt: r.weekResetAt,
+                     emptyText: nil)
+
+            limitRow(label: "Nur Sonnet",
+                     bucket: r.weekSonnet,
+                     limit: r.weeklySonnetLimit,
+                     resetAt: r.weekResetAt,
+                     emptyText: r.weekSonnet.messageCount == 0
+                        ? "Sonnet diese Woche nicht genutzt" : nil)
+
+            limitRow(label: "Nur Opus",
+                     bucket: r.weekOpus,
+                     limit: r.weeklyOpusLimit,
+                     resetAt: r.weekResetAt,
+                     emptyText: r.weekOpus.messageCount == 0
+                        ? "Opus diese Woche nicht genutzt" : nil)
         }
     }
 
-    private func periodRow(_ label: String, bucket: UsageBucket, isLast: Bool = false) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(label)
-                    .font(.callout)
-                    .frame(width: 64, alignment: .leading)
-                Spacer()
-                Text(Formatter.full(bucket.totalTokens))
-                    .font(.callout.monospacedDigit())
-                Text("Tokens")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .frame(width: 50, alignment: .leading)
-                Text(verbatim: "\(bucket.messageCount) Nachr.")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundColor(.secondary)
-                    .frame(width: 70, alignment: .trailing)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            if !isLast {
-                Divider().opacity(0.4)
-            }
-        }
-    }
-
-    // MARK: - Token chips
-
-    @ViewBuilder
-    private func tokenChips(bucket: UsageBucket) -> some View {
-        HStack(spacing: 6) {
-            chip("In",         value: bucket.inputTokens,         color: .blue)
-            chip("Out",        value: bucket.outputTokens,        color: .green)
-            chip("Cache W",    value: bucket.cacheCreationTokens, color: .orange)
-            chip("Cache R",    value: bucket.cacheReadTokens,     color: .purple)
-        }
-    }
-
-    private func chip(_ label: String, value: Int, color: Color) -> some View {
-        VStack(spacing: 1) {
-            Text(label)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundColor(.secondary)
-            Text(Formatter.compact(value))
-                .font(.caption.monospacedDigit())
-                .foregroundColor(color)
-        }
-        .padding(.vertical, 4)
-        .frame(maxWidth: .infinity)
-        .background(color.opacity(0.12))
-        .cornerRadius(6)
-    }
-
-    // MARK: - Model breakdown
-
-    @ViewBuilder
-    private func modelBreakdown(_ r: UsageReport) -> some View {
-        let models = r.allTime.perModel.sorted { $0.value.totalTokens > $1.value.totalTokens }
-        if !models.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Nach Modell (Gesamt)")
-                    .font(.subheadline.weight(.semibold))
-                ForEach(models.prefix(5), id: \.key) { (model, bucket) in
-                    HStack {
-                        // verbatim: never let attacker-controlled JSONL strings
-                        // be parsed as a LocalizedStringKey / markdown.
-                        Text(verbatim: modelLabel(model))
-                            .font(.caption)
-                            .lineLimit(1)
-                        Spacer()
-                        Text(Formatter.full(bucket.totalTokens))
-                            .font(.caption.monospacedDigit())
-                        Text(verbatim: "\(bucket.messageCount) Nachr.")
-                            .font(.caption.monospacedDigit())
+    private func limitRow(label: String,
+                          bucket: UsageBucket,
+                          limit: Int?,
+                          resetAt: Date,
+                          emptyText: String?) -> some View {
+        let percent: Int? = {
+            guard let l = limit, l > 0 else { return nil }
+            let v = Double(bucket.totalTokens) / Double(l) * 100
+            return Int(min(100, max(0, v.rounded())))
+        }()
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(verbatim: label)
+                        .font(.callout.weight(.semibold))
+                    if let txt = emptyText {
+                        Text(verbatim: txt)
+                            .font(.caption2)
                             .foregroundColor(.secondary)
-                            .frame(width: 70, alignment: .trailing)
+                    } else {
+                        Text(verbatim: "Zurücksetzung \(weekdayShort(resetAt)), \(Formatter.clockTime(resetAt))")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
                 }
+                Spacer()
+                if let p = percent {
+                    Text(verbatim: "\(p) % verwendet")
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(p > 85 ? .orange : .secondary)
+                } else {
+                    Text(verbatim: "\(Formatter.compact(bucket.totalTokens)) Tokens")
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                }
+            }
+            if let p = percent {
+                ProgressView(value: Double(p) / 100.0)
+                    .tint(p > 85 ? .orange : .accentColor)
+            } else {
+                ProgressView(value: 0).tint(.gray)
             }
         }
+    }
+
+    /// "Mo." / "Di." / etc. — Anthropic uses German short weekday names.
+    private func weekdayShort(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "de_DE")
+        f.dateFormat = "EEEEEE"     // "Mo"
+        let s = f.string(from: date)
+        return s.hasSuffix(".") ? s : s + "."
     }
 
     private func modelLabel(_ m: String) -> String {

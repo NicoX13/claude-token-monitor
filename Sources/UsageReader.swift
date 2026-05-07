@@ -219,23 +219,32 @@ final class UsageReader {
 
     private func aggregate(entries: [(UsageEntry, Int, Int)], now: Date) -> UsageReport {
         let cal = Calendar(identifier: .iso8601)
-        var startOfToday = cal.startOfDay(for: now)
-        // Ensure local-time start of day
-        startOfToday = cal.startOfDay(for: now)
+        let startOfToday = cal.startOfDay(for: now)
 
-        // Start of ISO week (Monday) in local time
-        var weekComp = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
-        weekComp.weekday = 2 // Monday in Gregorian; .iso8601 uses Monday-first
-        let startOfWeek = cal.date(from: weekComp) ?? startOfToday
+        // ---------------- Anthropic-style weekly window: Mon 06:00 → Mon 06:00.
+        // (claude.ai shows "Zurücksetzung Mo., 06:00", so the rollover is at
+        //  Monday 06:00 local time, not at midnight.)
+        let weekStart: Date = {
+            let weekday = cal.component(.weekday, from: now) // Sun=1, Mon=2…
+            let daysSinceMon = (weekday + 7 - 2) % 7
+            let mondayThisWeek = cal.startOfDay(
+                for: cal.date(byAdding: .day, value: -daysSinceMon, to: now) ?? now
+            )
+            let monThisWeek6 = cal.date(byAdding: .hour, value: 6, to: mondayThisWeek) ?? mondayThisWeek
+            // If we haven't yet crossed this week's Monday 06:00, the *previous*
+            // week's reset is what's active.
+            if monThisWeek6 > now {
+                return cal.date(byAdding: .day, value: -7, to: monThisWeek6) ?? monThisWeek6
+            }
+            return monThisWeek6
+        }()
+        let weekResetAt = cal.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
 
         var monthComp = cal.dateComponents([.year, .month], from: now)
         monthComp.day = 1
         let startOfMonth = cal.date(from: monthComp) ?? startOfToday
 
-        // Sort by time ascending, then chunk into Anthropic-style fixed-5h
-        // session windows. A new session begins when the message's timestamp
-        // is at or after the end of the last session — i.e. the previous
-        // session has elapsed and this prompt opens a new 5h window.
+        // ---------------- Session windows (fixed 5h each, Anthropic-style).
         let sortedAsc = entries.sorted { $0.0.timestamp < $1.0.timestamp }
         let sessionWindow: TimeInterval = 5 * 3600
 
@@ -254,21 +263,29 @@ final class UsageReader {
         let sessionStart = mostRecent?.start
         let sessionResetAt = mostRecent?.end
 
-        var session = UsageBucket()
-        var today = UsageBucket()
-        var week = UsageBucket()
-        var month = UsageBucket()
-        var allTime = UsageBucket()
+        // ---------------- Buckets.
+        var session   = UsageBucket()
+        var today     = UsageBucket()
+        var week      = UsageBucket()
+        var weekSonn  = UsageBucket()
+        var weekOpus  = UsageBucket()
+        var month     = UsageBucket()
+        var allTime   = UsageBucket()
 
         for (e, c5, c1) in sortedAsc {
             let cost = Pricing.cost(for: e, cache5m: c5, cache1h: c1)
+            let modelLower = e.model.lowercased()
             allTime.add(e, cost: cost)
             if e.timestamp >= startOfMonth { month.add(e, cost: cost) }
-            if e.timestamp >= startOfWeek  { week.add(e, cost: cost) }
+            if e.timestamp >= weekStart, e.timestamp < weekResetAt {
+                week.add(e, cost: cost)
+                if modelLower.contains("sonnet") {
+                    weekSonn.add(e, cost: cost)
+                } else if modelLower.contains("opus") {
+                    weekOpus.add(e, cost: cost)
+                }
+            }
             if e.timestamp >= startOfToday { today.add(e, cost: cost) }
-            // Session bucket = only the most recent session window, regardless
-            // of whether it's still active or already elapsed. The active flag
-            // tells the UI which label to use.
             if let s = mostRecent,
                e.timestamp >= s.start,
                e.timestamp <  s.end {
@@ -276,9 +293,6 @@ final class UsageReader {
             }
         }
 
-        // Resolve the user-selected plan (default Max 20× — most users of
-        // Claude Code today are on Max-tier subscriptions; can be changed
-        // via the status-item right-click menu).
         let planRaw = UserDefaults.standard.string(forKey: "SessionPlan") ?? SessionPlan.max5x.rawValue
         let plan = SessionPlan(rawValue: planRaw) ?? .max5x
 
@@ -288,11 +302,17 @@ final class UsageReader {
                            isSessionActive: isSessionActive,
                            today: today,
                            week: week,
+                           weekSonnet: weekSonn,
+                           weekOpus: weekOpus,
+                           weekResetAt: weekResetAt,
                            month: month,
                            allTime: allTime,
                            lastMessageAt: sortedAsc.last?.0.timestamp,
                            totalEntries: sortedAsc.count,
                            generatedAt: now,
-                           sessionTokenLimit: plan.tokenLimit)
+                           sessionTokenLimit: plan.tokenLimit,
+                           weeklyAllLimit: plan.weeklyAllLimit,
+                           weeklySonnetLimit: plan.weeklySonnetLimit,
+                           weeklyOpusLimit: plan.weeklyOpusLimit)
     }
 }
