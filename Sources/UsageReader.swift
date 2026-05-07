@@ -276,6 +276,12 @@ final class UsageReader {
             }
         }
 
+        // Resolve the user-selected plan (default Max 20× — most users of
+        // Claude Code today are on Max-tier subscriptions; can be changed
+        // via the status-item right-click menu).
+        let planRaw = UserDefaults.standard.string(forKey: "SessionPlan") ?? SessionPlan.max20x.rawValue
+        let plan = SessionPlan(rawValue: planRaw) ?? .max20x
+
         return UsageReport(session: session,
                            sessionStart: sessionStart,
                            sessionResetAt: sessionResetAt,
@@ -285,6 +291,7 @@ final class UsageReader {
                            allTime: allTime,
                            lastMessageAt: sortedAsc.last?.0.timestamp,
                            totalEntries: sortedAsc.count,
-                           generatedAt: now)
+                           generatedAt: now,
+                           sessionTokenLimit: plan.tokenLimit)
     }
 }

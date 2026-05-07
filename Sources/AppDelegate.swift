@@ -191,6 +191,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(NSMenuItem.separator())
+
+        // Plan submenu — picks the per-session token allowance shown as
+        // "X / Y Tokens" + progress bar.
+        let planItem = NSMenuItem(title: "Plan", action: nil, keyEquivalent: "")
+        let planMenu = NSMenu()
+        let currentPlan = SessionPlan(rawValue: UserDefaults.standard.string(forKey: "SessionPlan")
+                                      ?? SessionPlan.max20x.rawValue) ?? .max20x
+        for plan in SessionPlan.allCases {
+            let it = NSMenuItem(title: plan.displayName,
+                                action: #selector(setPlan(_:)),
+                                keyEquivalent: "")
+            it.representedObject = plan.rawValue
+            it.state = (plan == currentPlan) ? .on : .off
+            it.target = self
+            planMenu.addItem(it)
+        }
+        planItem.submenu = planMenu
+        menu.addItem(planItem)
+
+        menu.addItem(NSMenuItem.separator())
         let details = NSMenuItem(title: "Details öffnen", action: #selector(togglePopoverFromMenu),
                                  keyEquivalent: "")
         details.target = self
@@ -226,6 +246,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func togglePopoverFromMenu() { togglePopover() }
     @objc private func quitApp() { NSApp.terminate(nil) }
+
+    @objc private func setPlan(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              SessionPlan(rawValue: raw) != nil else { return }
+        UserDefaults.standard.set(raw, forKey: "SessionPlan")
+        refresh()
+    }
 
     private func showDesktopWidget() {
         if desktopWidget == nil {

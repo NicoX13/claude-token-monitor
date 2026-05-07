@@ -58,4 +58,35 @@ struct UsageReport {
     let lastMessageAt: Date?
     let totalEntries: Int
     let generatedAt: Date
+    /// User-configured session token allowance (e.g. Pro / Max 5x / Max 20x).
+    /// `nil` means "don't display a limit, just the raw count".
+    let sessionTokenLimit: Int?
+}
+
+/// User-selectable plan presets. Numbers are conservative estimates of the
+/// rough per-5h-session token allowance — Anthropic does not publish hard
+/// caps, so these are "good enough for a progress bar", not contractual.
+enum SessionPlan: String, CaseIterable {
+    case pro    = "pro"
+    case max5x  = "max5x"
+    case max20x = "max20x"
+    case hidden = "hidden"
+
+    var tokenLimit: Int? {
+        switch self {
+        case .pro:    return   250_000
+        case .max5x:  return 1_000_000
+        case .max20x: return 5_000_000
+        case .hidden: return nil
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .pro:    return "Pro (~250k / Session)"
+        case .max5x:  return "Max 5× (~1M / Session)"
+        case .max20x: return "Max 20× (~5M / Session)"
+        case .hidden: return "Limit ausblenden"
+        }
+    }
 }

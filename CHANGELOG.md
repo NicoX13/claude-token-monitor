@@ -7,10 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-05-07
+
 ### Added
+- **Plan-based session quota display.** A new "Plan" submenu in the
+  status-item right-click menu lets users pick Pro (~250k), Max 5×
+  (~1M), Max 20× (~5M), or "Limit ausblenden". When a plan is set, the
+  popover and desktop widget show "X / Y Tokens" with a quota progress
+  bar. The bar turns orange above 85 % to signal the user is near the
+  cap. Defaults to Max 20× because most current Claude Code users are
+  on Max-tier subscriptions.
+- Per-period **message counts** in the popover and widget grids
+  ("Heute: 1.9M Tokens · 28 Msgs"). Useful to spot which periods had
+  many small messages versus few heavy ones.
 - Right-click context menu on the desktop widget itself (toggle / snap /
   size / open details / quit). Previously these were only reachable from
   the menu-bar status item.
+- Four-layer refresh strategy: 5-second polling on RunLoop.main `.common`
+  mode (replaces 30 s `.default`-mode timer), `DispatchSource`
+  file-system watcher on `~/.claude/projects/` for sub-second updates
+  on Claude Code writes, plus `NSWorkspace.didWakeNotification` and
+  `NSApplication.didBecomeActiveNotification` handlers so timers don't
+  drift across sleep/wake.
+
+### Changed
+- **Removed all USD cost displays** from the popover and desktop widget.
+  Pro and Max subscribers pay a flat fee — the dollar number was only an
+  API-equivalent estimate and confused more than it helped. Replaced
+  with token counts and message counts.
 
 ### Fixed
 - Hard outline around the desktop widget caused by AppKit's window shadow
@@ -18,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `NSWindow.hasShadow` and rely solely on the soft SwiftUI drop shadow.
 - Removed the redundant white 1-pt overlay stroke that contributed to the
   visible border.
+- Status item and widget would occasionally stay stale up to 30 s when
+  the user had a menu open during a refresh tick — `.common` runloop
+  mode plus the FS watcher fix this.
 
 ## [1.0.0] — 2026-05-07
 

@@ -275,16 +275,17 @@ private struct DesktopWidgetView: View {
         DesktopEntry(
             now: tick,
             sessionTokens: r.session.totalTokens,
-            sessionCost: r.session.cost,
             sessionStart: r.sessionStart,
             sessionResetAt: r.sessionResetAt,
+            sessionTokenLimit: r.sessionTokenLimit,
             todayTokens: r.today.totalTokens,
-            todayCost: r.today.cost,
+            todayMessages: r.today.messageCount,
             weekTokens: r.week.totalTokens,
-            weekCost: r.week.cost,
+            weekMessages: r.week.messageCount,
             monthTokens: r.month.totalTokens,
-            monthCost: r.month.cost,
+            monthMessages: r.month.messageCount,
             allTimeTokens: r.allTime.totalTokens,
+            allTimeMessages: r.allTime.messageCount,
             lastActivity: r.lastMessageAt
         )
     }
@@ -293,16 +294,17 @@ private struct DesktopWidgetView: View {
 struct DesktopEntry {
     let now: Date
     let sessionTokens: Int
-    let sessionCost: Double
     let sessionStart: Date?
     let sessionResetAt: Date?
+    let sessionTokenLimit: Int?
     let todayTokens: Int
-    let todayCost: Double
+    let todayMessages: Int
     let weekTokens: Int
-    let weekCost: Double
+    let weekMessages: Int
     let monthTokens: Int
-    let monthCost: Double
+    let monthMessages: Int
     let allTimeTokens: Int
+    let allTimeMessages: Int
     let lastActivity: Date?
 }
 
@@ -328,9 +330,15 @@ private struct WidgetSmall: View {
                 .foregroundColor(.white)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
-            Text(verbatim: "Tokens · Session")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.white.opacity(0.55))
+            if let limit = entry.sessionTokenLimit {
+                Text(verbatim: "von \(WCompact.compact(limit)) · Session")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white.opacity(0.55))
+            } else {
+                Text(verbatim: "Tokens · Session")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white.opacity(0.55))
+            }
             Spacer(minLength: 4)
             sessionFooter
         }
@@ -340,9 +348,19 @@ private struct WidgetSmall: View {
     }
     @ViewBuilder
     private var sessionFooter: some View {
-        if let reset = entry.sessionResetAt, let start = entry.sessionStart {
-            let total: Double = 5 * 3600
-            let progress = min(1, max(0, entry.now.timeIntervalSince(start) / total))
+        if let reset = entry.sessionResetAt {
+            // Prefer the token-quota progress when a plan limit is set;
+            // otherwise fall back to the time-to-reset progress.
+            let progress: Double = {
+                if let limit = entry.sessionTokenLimit, limit > 0 {
+                    return min(1, max(0, Double(entry.sessionTokens) / Double(limit)))
+                }
+                if let start = entry.sessionStart {
+                    let total: Double = 5 * 3600
+                    return min(1, max(0, entry.now.timeIntervalSince(start) / total))
+                }
+                return 0
+            }()
             VStack(alignment: .leading, spacing: 3) {
                 ProgressView(value: progress)
                     .tint(progress > 0.85 ? .orange : .white.opacity(0.85))
@@ -378,15 +396,30 @@ private struct WidgetMedium: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white.opacity(0.85))
                 }
-                Text(verbatim: WCompact.compact(entry.sessionTokens))
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundColor(.white)
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
-                if let reset = entry.sessionResetAt, let start = entry.sessionStart {
-                    let total: Double = 5 * 3600
-                    let progress = min(1, max(0, entry.now.timeIntervalSince(start) / total))
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(verbatim: WCompact.compact(entry.sessionTokens))
+                        .font(.system(size: 40, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(.white)
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    if let limit = entry.sessionTokenLimit {
+                        Text(verbatim: "/ \(WCompact.compact(limit))")
+                            .font(.system(size: 14, weight: .medium).monospacedDigit())
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                }
+                if let reset = entry.sessionResetAt {
+                    let progress: Double = {
+                        if let limit = entry.sessionTokenLimit, limit > 0 {
+                            return min(1, max(0, Double(entry.sessionTokens) / Double(limit)))
+                        }
+                        if let start = entry.sessionStart {
+                            let total: Double = 5 * 3600
+                            return min(1, max(0, entry.now.timeIntervalSince(start) / total))
+                        }
+                        return 0
+                    }()
                     ProgressView(value: progress)
                         .tint(progress > 0.85 ? .orange : .white.opacity(0.85))
                         .scaleEffect(x: 1, y: 0.7, anchor: .center)
@@ -402,9 +435,9 @@ private struct WidgetMedium: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Divider().background(Color.white.opacity(0.15))
             VStack(alignment: .leading, spacing: 8) {
-                statRow("Heute", tokens: entry.todayTokens, cost: entry.todayCost)
-                statRow("Woche", tokens: entry.weekTokens,  cost: entry.weekCost)
-                statRow("Monat", tokens: entry.monthTokens, cost: entry.monthCost)
+                statRow("Heute", tokens: entry.todayTokens, msgs: entry.todayMessages)
+                statRow("Woche", tokens: entry.weekTokens,  msgs: entry.weekMessages)
+                statRow("Monat", tokens: entry.monthTokens, msgs: entry.monthMessages)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -412,7 +445,7 @@ private struct WidgetMedium: View {
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    private func statRow(_ label: String, tokens: Int, cost: Double) -> some View {
+    private func statRow(_ label: String, tokens: Int, msgs: Int) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(verbatim: label)
                 .font(.system(size: 10, weight: .medium))
@@ -422,7 +455,7 @@ private struct WidgetMedium: View {
                 .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
                 .foregroundColor(.white)
             Spacer()
-            Text(verbatim: WCompact.usd(cost))
+            Text(verbatim: "\(msgs) Msgs")
                 .font(.system(size: 10, weight: .medium).monospacedDigit())
                 .foregroundColor(.white.opacity(0.55))
         }
@@ -448,18 +481,35 @@ private struct WidgetLarge: View {
                 }
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(verbatim: WCompact.full(entry.sessionTokens))
-                    .font(.system(size: 44, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundColor(.white)
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-                Text(verbatim: "Tokens in aktueller Session")
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(verbatim: WCompact.full(entry.sessionTokens))
+                        .font(.system(size: 44, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(.white)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                    if let limit = entry.sessionTokenLimit {
+                        Text(verbatim: "/ \(WCompact.compact(limit))")
+                            .font(.system(size: 16, weight: .medium).monospacedDigit())
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                }
+                Text(verbatim: entry.sessionTokenLimit != nil
+                     ? "Tokens · Plan-Kontingent"
+                     : "Tokens in aktueller Session")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.white.opacity(0.6))
-                if let reset = entry.sessionResetAt, let start = entry.sessionStart {
-                    let total: Double = 5 * 3600
-                    let progress = min(1, max(0, entry.now.timeIntervalSince(start) / total))
+                if let reset = entry.sessionResetAt {
+                    let progress: Double = {
+                        if let limit = entry.sessionTokenLimit, limit > 0 {
+                            return min(1, max(0, Double(entry.sessionTokens) / Double(limit)))
+                        }
+                        if let start = entry.sessionStart {
+                            let total: Double = 5 * 3600
+                            return min(1, max(0, entry.now.timeIntervalSince(start) / total))
+                        }
+                        return 0
+                    }()
                     let remaining = max(0, reset.timeIntervalSince(entry.now))
                     let h = Int(remaining) / 3600
                     let m = (Int(remaining) % 3600) / 60
@@ -483,10 +533,10 @@ private struct WidgetLarge: View {
             }
             Divider().background(Color.white.opacity(0.12))
             VStack(spacing: 8) {
-                largeRow("Heute",  tokens: entry.todayTokens,   cost: entry.todayCost)
-                largeRow("Woche",  tokens: entry.weekTokens,    cost: entry.weekCost)
-                largeRow("Monat",  tokens: entry.monthTokens,   cost: entry.monthCost)
-                largeRow("Gesamt", tokens: entry.allTimeTokens, cost: nil)
+                largeRow("Heute",  tokens: entry.todayTokens,    msgs: entry.todayMessages)
+                largeRow("Woche",  tokens: entry.weekTokens,     msgs: entry.weekMessages)
+                largeRow("Monat",  tokens: entry.monthTokens,    msgs: entry.monthMessages)
+                largeRow("Gesamt", tokens: entry.allTimeTokens,  msgs: entry.allTimeMessages)
             }
             Spacer(minLength: 0)
         }
@@ -494,7 +544,7 @@ private struct WidgetLarge: View {
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-    private func largeRow(_ label: String, tokens: Int, cost: Double?) -> some View {
+    private func largeRow(_ label: String, tokens: Int, msgs: Int) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(verbatim: label)
                 .font(.system(size: 12, weight: .medium))
@@ -504,11 +554,9 @@ private struct WidgetLarge: View {
                 .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
                 .foregroundColor(.white)
             Spacer()
-            if let c = cost {
-                Text(verbatim: WCompact.usd(c))
-                    .font(.system(size: 12, weight: .medium).monospacedDigit())
-                    .foregroundColor(.white.opacity(0.55))
-            }
+            Text(verbatim: "\(msgs) Msgs")
+                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .foregroundColor(.white.opacity(0.55))
         }
     }
 }

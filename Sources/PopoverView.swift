@@ -74,22 +74,36 @@ struct PopoverView: View {
                 Text(Formatter.full(r.session.totalTokens))
                     .font(.system(size: 28, weight: .semibold, design: .rounded))
                     .monospacedDigit()
+                if let limit = r.sessionTokenLimit {
+                    Text("/ \(Formatter.compact(limit))")
+                        .font(.callout.monospacedDigit())
+                        .foregroundColor(.secondary)
+                }
                 Text("Tokens")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
-                Text(Formatter.usd(r.session.cost))
-                    .font(.callout.monospacedDigit())
+            }
+
+            // Token-quota progress (only if a plan limit is set)
+            if let limit = r.sessionTokenLimit, limit > 0 {
+                let used = Double(r.session.totalTokens) / Double(limit)
+                let clamped = min(1.0, max(0.0, used))
+                ProgressView(value: clamped)
+                    .tint(clamped > 0.85 ? .orange : .accentColor)
+                Text("\(Int(clamped * 100)) % des Plan-Kontingents verbraucht")
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
 
+            // Time-to-reset progress
             if let reset = r.sessionResetAt {
                 let remaining = max(0, reset.timeIntervalSince(tick))
                 let total: Double = 5 * 3600
-                let progress = min(1.0, max(0.0, 1.0 - remaining / total))
-                ProgressView(value: progress)
-                    .tint(progress > 0.85 ? .orange : .accentColor)
-                Text("Noch \(timeRemainingString(remaining)) bis Reset")
+                let timeProgress = min(1.0, max(0.0, 1.0 - remaining / total))
+                ProgressView(value: timeProgress)
+                    .tint(.gray)
+                Text("Noch \(timeRemainingString(remaining)) bis Sitzungs-Reset")
                     .font(.caption)
                     .foregroundColor(.secondary)
             } else {
@@ -138,14 +152,14 @@ struct PopoverView: View {
                 Spacer()
                 Text(Formatter.full(bucket.totalTokens))
                     .font(.callout.monospacedDigit())
-                Text("Tk")
+                Text("Tokens")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                    .frame(width: 22, alignment: .leading)
-                Text(Formatter.usd(bucket.cost))
-                    .font(.callout.monospacedDigit())
+                    .frame(width: 50, alignment: .leading)
+                Text("\(bucket.messageCount) Msgs")
+                    .font(.caption2.monospacedDigit())
                     .foregroundColor(.secondary)
-                    .frame(width: 78, alignment: .trailing)
+                    .frame(width: 70, alignment: .trailing)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -201,7 +215,7 @@ struct PopoverView: View {
                         Spacer()
                         Text(Formatter.full(bucket.totalTokens))
                             .font(.caption.monospacedDigit())
-                        Text(Formatter.usd(bucket.cost))
+                        Text("\(bucket.messageCount) Msgs")
                             .font(.caption.monospacedDigit())
                             .foregroundColor(.secondary)
                             .frame(width: 70, alignment: .trailing)
