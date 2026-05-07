@@ -1,10 +1,18 @@
 # Claude Token Monitor
 
+> A native macOS app that surfaces your Claude Code token usage everywhere
+> you'd want to see it — menu-bar item, detail popover, and a real desktop
+> widget. Built and maintained by **[Nico Felix](https://github.com/NicoX13)**.
+
 [![build](https://github.com/NicoX13/claude-token-monitor/actions/workflows/build.yml/badge.svg)](https://github.com/NicoX13/claude-token-monitor/actions/workflows/build.yml)
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B-000?logo=apple&logoColor=white)](#requirements)
 [![Swift 5.10](https://img.shields.io/badge/Swift-5.10-F05138?logo=swift&logoColor=white)](#requirements)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![No Xcode required](https://img.shields.io/badge/build-no%20Xcode-success)](#build)
+[![Author: Nico Felix](https://img.shields.io/badge/author-Nico%20Felix-181717?logo=github&logoColor=white)](https://github.com/NicoX13)
+
+Free for everyone to use, fork, and modify under the MIT license — see
+[About the author](#about-the-author) at the bottom.
 
 A native macOS app that surfaces your **Claude Code** token usage everywhere
 you'd want to see it:
@@ -273,9 +281,28 @@ are welcome.
 See [open issues](https://github.com/NicoX13/claude-token-monitor/issues) and
 [contributing guidelines](CONTRIBUTING.md).
 
+## About the author
+
+Built and maintained by **Nico Felix** — [@NicoX13](https://github.com/NicoX13)
+on GitHub.
+
+If this project saves you time, the kindest things you can do are:
+- ⭐ Star the repo so others find it
+- 🐦 Share it with anyone running Claude Code
+- 🐛 Open an issue if something breaks
+- 🔧 Send a PR if you have a fix or improvement (see [CONTRIBUTING](CONTRIBUTING.md))
+
+For security disclosures, please use
+[GitHub Security Advisories](https://github.com/NicoX13/claude-token-monitor/security/advisories/new)
+rather than a public issue.
+
 ## License
 
-[MIT](LICENSE) © 2026 Nico Felix.
+Released under the [MIT License](LICENSE) — © 2026 Nico Felix.
+
+You are free to **use**, **copy**, **modify**, **merge**, **publish**,
+**distribute**, **sublicense**, and **sell** copies of this software, as long
+as the copyright notice and license stay with the source. No warranty.
 
 This project is unaffiliated with Anthropic. Claude™ is a trademark of
 Anthropic.

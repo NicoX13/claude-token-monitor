@@ -32,5 +32,7 @@
     <false/>
     <key>NSSupportsSuddenTermination</key>
     <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 Nico Felix · MIT License</string>
 </dict>
 </plist>

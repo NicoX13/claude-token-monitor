@@ -27,5 +27,7 @@
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.widgetkit-extension</string>
     </dict>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 Nico Felix · MIT License</string>
 </dict>
 </plist>
