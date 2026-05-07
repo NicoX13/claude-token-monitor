@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] — 2026-05-07
+
+### Fixed
+- **Large desktop widget: missing subtitle on the "Nur Opus" row.**
+  In 1.4.0 only the *Alle Modelle* row showed the
+  "Zurücksetzung Mo., 06:00" hint, the other two rows had no
+  subtitle when the bucket was non-empty. The Opus row in particular
+  ended up with the label and percent floating with no caption,
+  which looked broken next to the consistently-captioned popover.
+  The widget now always renders a subtitle — either the
+  "diese Woche nicht genutzt" fallback when the bucket is empty,
+  or the reset hint otherwise — matching the popover layout.
+
 ## [1.4.0] — 2026-05-07
 
 ### Added

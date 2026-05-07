@@ -633,19 +633,13 @@ private struct WidgetLarge: View {
                     .foregroundColor(.white.opacity(0.85))
                 largeWeeklyRow(label: "Alle Modelle",
                                pct: entry.percent(entry.weekTokens, of: entry.weeklyAllLimit),
-                               fallbackText: nil,
-                               showResetHint: true,
-                               resetAt: entry.weekResetAt)
+                               fallbackText: nil)
                 largeWeeklyRow(label: "Nur Sonnet",
                                pct: entry.percent(entry.weekSonnetTokens, of: entry.weeklySonnetLimit),
-                               fallbackText: entry.weekSonnetTokens == 0 ? "Sonnet diese Woche nicht genutzt" : nil,
-                               showResetHint: false,
-                               resetAt: entry.weekResetAt)
+                               fallbackText: entry.weekSonnetTokens == 0 ? "Sonnet diese Woche nicht genutzt" : nil)
                 largeWeeklyRow(label: "Nur Opus",
                                pct: entry.percent(entry.weekOpusTokens, of: entry.weeklyOpusLimit),
-                               fallbackText: entry.weekOpusTokens == 0 ? "Opus diese Woche nicht genutzt" : nil,
-                               showResetHint: false,
-                               resetAt: entry.weekResetAt)
+                               fallbackText: entry.weekOpusTokens == 0 ? "Opus diese Woche nicht genutzt" : nil)
             }
             Spacer(minLength: 0)
         }
@@ -653,26 +647,22 @@ private struct WidgetLarge: View {
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
+    /// Always renders the "Zurücksetzung Mo., 06:00" subtitle when there's
+    /// usage; falls back to the per-row "diese Woche nicht genutzt" when the
+    /// bucket is empty. Mirrors the popover layout so the widget never has
+    /// rows missing a subtitle (which looked broken in earlier builds).
     private func largeWeeklyRow(label: String,
                                 pct: Int?,
-                                fallbackText: String?,
-                                showResetHint: Bool,
-                                resetAt: Date) -> some View {
+                                fallbackText: String?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(verbatim: label)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.white.opacity(0.85))
-                    if let txt = fallbackText {
-                        Text(verbatim: txt)
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundColor(.white.opacity(0.5))
-                    } else if showResetHint {
-                        Text(verbatim: "Zurücksetzung Mo., 06:00")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundColor(.white.opacity(0.5))
-                    }
+                    Text(verbatim: fallbackText ?? "Zurücksetzung Mo., 06:00")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
                 }
                 Spacer()
                 if let p = pct {
