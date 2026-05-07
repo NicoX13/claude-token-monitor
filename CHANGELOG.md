@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Right-click context menu on the desktop widget itself (toggle / snap /
+  size / open details / quit). Previously these were only reachable from
+  the menu-bar status item.
+
+### Fixed
+- Hard outline around the desktop widget caused by AppKit's window shadow
+  tracing the alpha edge of the rounded SwiftUI content. Disabled
+  `NSWindow.hasShadow` and rely solely on the soft SwiftUI drop shadow.
+- Removed the redundant white 1-pt overlay stroke that contributed to the
+  visible border.
+
 ## [1.0.0] — 2026-05-07
 
 Initial public release.

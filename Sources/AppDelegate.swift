@@ -149,7 +149,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showDesktopWidget() {
         if desktopWidget == nil {
-            desktopWidget = DesktopWidgetWindow(viewModel: viewModel)
+            desktopWidget = DesktopWidgetWindow(viewModel: viewModel) { [weak self] action in
+                self?.handleWidgetMenuAction(action)
+            }
         }
         desktopWidget?.show()
     }
@@ -157,6 +159,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func hideDesktopWidget() {
         desktopWidget?.hide()
         desktopWidget = nil
+    }
+
+    private func handleWidgetMenuAction(_ action: DesktopWidgetWindow.MenuAction) {
+        switch action {
+        case .toggleVisibility:
+            hideDesktopWidget()
+            UserDefaults.standard.set(false, forKey: desktopWidgetEnabledKey)
+        case .snapTopLeft:
+            desktopWidget?.snapToTopLeft()
+        case .setSize(let size):
+            desktopWidget?.setSize(size)
+        case .openDetails:
+            togglePopover()
+        case .quit:
+            NSApp.terminate(nil)
+        }
     }
 
     private func refresh() {

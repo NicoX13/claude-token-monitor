@@ -26,13 +26,27 @@ final class DesktopWidgetWindow: NSObject {
         }
     }
 
+    /// Routed to AppDelegate when the user picks something from the widget's
+    /// own right-click context menu.
+    enum MenuAction {
+        case toggleVisibility
+        case snapTopLeft
+        case setSize(Size)
+        case openDetails
+        case quit
+    }
+
     private(set) var window: NSWindow!
     private let viewModel: UsageViewModel
     private let prefsKey = "DesktopWidgetFrame"
     private let sizePrefsKey = "DesktopWidgetSize"
+    private let actionHandler: (MenuAction) -> Void
 
-    init(viewModel: UsageViewModel, defaultSize: Size = .medium) {
+    init(viewModel: UsageViewModel,
+         defaultSize: Size = .medium,
+         onMenuAction: @escaping (MenuAction) -> Void) {
         self.viewModel = viewModel
+        self.actionHandler = onMenuAction
         super.init()
 
         let savedSizeRaw = UserDefaults.standard.string(forKey: sizePrefsKey)
@@ -50,7 +64,10 @@ final class DesktopWidgetWindow: NSObject {
         )
         win.isOpaque = false
         win.backgroundColor = .clear
-        win.hasShadow = true
+        // Disable the OS-drawn window shadow — it traces the alpha edge of the
+        // SwiftUI content and produces a hard outline. SwiftUI .shadow renders
+        // a soft drop shadow instead.
+        win.hasShadow = false
         win.isMovableByWindowBackground = true
         win.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         // Sit on the "desktop icon" level — above the wallpaper, below normal
@@ -67,6 +84,14 @@ final class DesktopWidgetWindow: NSObject {
         hostView.translatesAutoresizingMaskIntoConstraints = true
         win.contentView = hostView
         win.contentView?.wantsLayer = true
+
+        // Wire right-click to our context menu. Borderless windows that can't
+        // become key still receive mouse events, but rightMouseDown isn't
+        // dispatched up the responder chain by default — we handle it on the
+        // window itself.
+        win.onRightMouseDown = { [weak self] location in
+            self?.showContextMenu(at: location)
+        }
 
         // Restore saved frame if we have one and it still fits the screen.
         if let saved = UserDefaults.standard.string(forKey: prefsKey),
@@ -126,6 +151,65 @@ final class DesktopWidgetWindow: NSObject {
     fileprivate func persistFrame() {
         UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: prefsKey)
     }
+
+    // MARK: - Context menu
+
+    private func showContextMenu(at location: NSPoint) {
+        let menu = NSMenu()
+
+        let toggle = menuItem("Widget ausblenden", action: #selector(menuToggle))
+        menu.addItem(toggle)
+
+        let snap = menuItem("Oben links anheften", action: #selector(menuSnapTopLeft))
+        menu.addItem(snap)
+
+        menu.addItem(.separator())
+
+        let sizeItem = NSMenuItem(title: "Größe", action: nil, keyEquivalent: "")
+        let sizeSub = NSMenu()
+        let currentSize = Size(rawValue: UserDefaults.standard.string(forKey: sizePrefsKey) ?? "") ?? .medium
+        for (title, raw) in [("Klein",  "small"),
+                             ("Mittel", "medium"),
+                             ("Groß",   "large")] {
+            let it = menuItem(title, action: #selector(menuSetSize(_:)))
+            it.representedObject = raw
+            it.state = (raw == currentSize.rawValue) ? .on : .off
+            sizeSub.addItem(it)
+        }
+        sizeItem.submenu = sizeSub
+        menu.addItem(sizeItem)
+
+        menu.addItem(.separator())
+
+        let details = menuItem("Details öffnen", action: #selector(menuOpenDetails))
+        menu.addItem(details)
+
+        menu.addItem(.separator())
+
+        let quit = menuItem("Beenden", action: #selector(menuQuit))
+        menu.addItem(quit)
+
+        // Pop up at the click location in window coordinates. We use
+        // popUp(positioning:at:in:) so the menu doesn't depend on the window
+        // becoming key.
+        menu.popUp(positioning: nil, at: location, in: window.contentView)
+    }
+
+    private func menuItem(_ title: String, action: Selector) -> NSMenuItem {
+        let it = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        it.target = self
+        return it
+    }
+
+    @objc private func menuToggle()       { actionHandler(.toggleVisibility) }
+    @objc private func menuSnapTopLeft()  { actionHandler(.snapTopLeft) }
+    @objc private func menuOpenDetails()  { actionHandler(.openDetails) }
+    @objc private func menuQuit()         { actionHandler(.quit) }
+    @objc private func menuSetSize(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let size = Size(rawValue: raw) else { return }
+        actionHandler(.setSize(size))
+    }
 }
 
 extension DesktopWidgetWindow: NSWindowDelegate {
@@ -133,11 +217,21 @@ extension DesktopWidgetWindow: NSWindowDelegate {
     func windowDidResize(_ notification: Notification) { persistFrame() }
 }
 
-/// NSWindow subclass that always reports `canBecomeKey` = false so it never
-/// steals focus from other apps — but it can still receive mouse drags.
+/// NSWindow subclass that:
+///   - reports `canBecomeKey/Main = false` so it never steals focus,
+///   - dispatches `rightMouseDown` to its `onRightMouseDown` callback so a
+///     non-key window can still show a context menu.
 private final class DraggableWindow: NSWindow {
+    /// Called with the click location in window-local coordinates.
+    var onRightMouseDown: ((NSPoint) -> Void)?
+
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    override func rightMouseDown(with event: NSEvent) {
+        let pointInWindow = event.locationInWindow
+        onRightMouseDown?(pointInWindow)
+    }
 }
 
 // MARK: - SwiftUI shell
@@ -171,10 +265,6 @@ private struct DesktopWidgetView: View {
             )
         )
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 1)
-        )
         .shadow(color: Color.black.opacity(0.35), radius: 16, x: 0, y: 8)
         .padding(6)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
