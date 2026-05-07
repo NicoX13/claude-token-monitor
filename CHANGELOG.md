@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.1] — 2026-05-07
+## [1.1.2] — 2026-05-07
+
+### Fixed
+- **Session detection now uses Anthropic-style fixed 5-h windows.** The
+  previous heuristic looked for the longest contiguous run of messages
+  with no >5 h gap and treated that as "the current session". For users
+  who chat for more than five straight hours, that bundled multiple
+  real Anthropic sessions into a single inflated bucket — the screen
+  in 1.1.1 showed *all* of today's tokens (74 M / 286 messages) as the
+  active session, with the reset clock pinned at the original session's
+  end (already 48 min in the past). The new algorithm walks messages
+  chronologically and starts a new 5-h window whenever a prompt arrives
+  at or after the previous window's end, mirroring how Anthropic's
+  quota system actually counts.
+- "Sitzung abgelaufen" state is now displayed honestly instead of
+  showing a pinned-at-zero countdown. When `now` is past the most
+  recent session's end, the popover and widget say "Letzte Sitzung
+  (abgelaufen) — Beendet vor X min, wartet auf nächsten Prompt"
+  rather than counting down at 0 h 00 min indefinitely.
+
+### Changed
+- **Unified abbreviations.** Token compact suffix changed from `M` /
+  `k` to `Mio` / `Tsd` (German), and message-count suffix changed
+  from `Msgs` to `Nachr.` so the two units can never be confused
+  visually. Menu-bar item still uses single-letter `M` / `k` because
+  it has only a few pixels of width.
+
+### Added
+- Most-recent-session view shows the message count as `N Nachr.` next
+  to the token total, matching the per-period rows.
 
 ### Changed
 - Polling fallback interval relaxed from 5 s to **60 s**. The

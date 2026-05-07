@@ -275,8 +275,10 @@ private struct DesktopWidgetView: View {
         DesktopEntry(
             now: tick,
             sessionTokens: r.session.totalTokens,
+            sessionMessages: r.session.messageCount,
             sessionStart: r.sessionStart,
             sessionResetAt: r.sessionResetAt,
+            isSessionActive: r.isSessionActive,
             sessionTokenLimit: r.sessionTokenLimit,
             todayTokens: r.today.totalTokens,
             todayMessages: r.today.messageCount,
@@ -294,8 +296,10 @@ private struct DesktopWidgetView: View {
 struct DesktopEntry {
     let now: Date
     let sessionTokens: Int
+    let sessionMessages: Int
     let sessionStart: Date?
     let sessionResetAt: Date?
+    let isSessionActive: Bool
     let sessionTokenLimit: Int?
     let todayTokens: Int
     let todayMessages: Int
@@ -366,7 +370,7 @@ private struct WidgetSmall: View {
                     .tint(progress > 0.85 ? .orange : .white.opacity(0.85))
                     .scaleEffect(x: 1, y: 0.7, anchor: .center)
                 HStack {
-                    Text(verbatim: "Reset")
+                    Text(verbatim: entry.isSessionActive ? "Reset" : "Endete")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.white.opacity(0.55))
                     Spacer()
@@ -392,7 +396,7 @@ private struct WidgetMedium: View {
                     Image(systemName: "sparkles")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.orange)
-                    Text(verbatim: "Session")
+                    Text(verbatim: entry.isSessionActive ? "Aktive Sitzung" : "Letzte Sitzung")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white.opacity(0.85))
                 }
@@ -423,11 +427,13 @@ private struct WidgetMedium: View {
                     ProgressView(value: progress)
                         .tint(progress > 0.85 ? .orange : .white.opacity(0.85))
                         .scaleEffect(x: 1, y: 0.7, anchor: .center)
-                    Text(verbatim: "Reset \(WCompact.clock(reset))")
+                    Text(verbatim: entry.isSessionActive
+                         ? "Reset \(WCompact.clock(reset))"
+                         : "Endete \(WCompact.clock(reset))")
                         .font(.system(size: 10, weight: .medium).monospacedDigit())
                         .foregroundColor(.white.opacity(0.6))
                 } else {
-                    Text(verbatim: "Keine aktive Sitzung")
+                    Text(verbatim: "Keine Sitzung erfasst")
                         .font(.system(size: 10))
                         .foregroundColor(.white.opacity(0.5))
                 }
@@ -455,7 +461,7 @@ private struct WidgetMedium: View {
                 .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
                 .foregroundColor(.white)
             Spacer()
-            Text(verbatim: "\(msgs) Msgs")
+            Text(verbatim: "\(msgs) Nachr.")
                 .font(.system(size: 10, weight: .medium).monospacedDigit())
                 .foregroundColor(.white.opacity(0.55))
         }
@@ -494,11 +500,17 @@ private struct WidgetLarge: View {
                             .foregroundColor(.white.opacity(0.6))
                     }
                 }
-                Text(verbatim: entry.sessionTokenLimit != nil
-                     ? "Tokens · Plan-Kontingent"
-                     : "Tokens in aktueller Session")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.6))
+                HStack(spacing: 8) {
+                    Text(verbatim: entry.isSessionActive
+                         ? "Tokens · aktive Sitzung"
+                         : "Tokens · letzte Sitzung (abgelaufen)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                    Spacer()
+                    Text(verbatim: "\(entry.sessionMessages) Nachr.")
+                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        .foregroundColor(.white.opacity(0.6))
+                }
                 if let reset = entry.sessionResetAt {
                     let progress: Double = {
                         if let limit = entry.sessionTokenLimit, limit > 0 {
@@ -510,23 +522,41 @@ private struct WidgetLarge: View {
                         }
                         return 0
                     }()
-                    let remaining = max(0, reset.timeIntervalSince(entry.now))
-                    let h = Int(remaining) / 3600
-                    let m = (Int(remaining) % 3600) / 60
                     ProgressView(value: progress)
                         .tint(progress > 0.85 ? .orange : .white.opacity(0.85))
                         .scaleEffect(x: 1, y: 0.8, anchor: .center)
-                    HStack {
-                        Text(verbatim: "Noch \(h) h \(String(format: "%02d", m)) min")
-                            .font(.system(size: 10, weight: .medium).monospacedDigit())
-                            .foregroundColor(.white.opacity(0.6))
-                        Spacer()
-                        Text(verbatim: "Reset \(WCompact.clock(reset))")
-                            .font(.system(size: 10, weight: .medium).monospacedDigit())
-                            .foregroundColor(.white.opacity(0.6))
+                    if entry.isSessionActive {
+                        let remaining = max(0, reset.timeIntervalSince(entry.now))
+                        let h = Int(remaining) / 3600
+                        let m = (Int(remaining) % 3600) / 60
+                        HStack {
+                            Text(verbatim: "Noch \(h) h \(String(format: "%02d", m)) min")
+                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                .foregroundColor(.white.opacity(0.6))
+                            Spacer()
+                            Text(verbatim: "Reset \(WCompact.clock(reset))")
+                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                    } else {
+                        let elapsed = max(0, entry.now.timeIntervalSince(reset))
+                        let h = Int(elapsed) / 3600
+                        let m = (Int(elapsed) % 3600) / 60
+                        let elapsedStr = h > 0
+                            ? "vor \(h) h \(String(format: "%02d", m)) min"
+                            : "vor \(m) min"
+                        HStack {
+                            Text(verbatim: "Beendet \(elapsedStr)")
+                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                .foregroundColor(.white.opacity(0.6))
+                            Spacer()
+                            Text(verbatim: "Endete \(WCompact.clock(reset))")
+                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                .foregroundColor(.white.opacity(0.6))
+                        }
                     }
                 } else {
-                    Text(verbatim: "Keine aktive Sitzung")
+                    Text(verbatim: "Noch keine Sitzung erfasst")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white.opacity(0.5))
                 }
@@ -554,7 +584,7 @@ private struct WidgetLarge: View {
                 .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
                 .foregroundColor(.white)
             Spacer()
-            Text(verbatim: "\(msgs) Msgs")
+            Text(verbatim: "\(msgs) Nachr.")
                 .font(.system(size: 12, weight: .medium).monospacedDigit())
                 .foregroundColor(.white.opacity(0.55))
         }
@@ -565,10 +595,18 @@ private struct WidgetLarge: View {
 // avoid coupling the desktop widget to the popover module).
 
 enum WCompact {
+    /// German-style compact token formatter. Uses "Mio" / "Tsd" so the unit
+    /// can never be confused with the message-count abbreviation ("Nachr.").
     static func compact(_ n: Int) -> String {
         let absN = abs(n)
-        if absN >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000.0) }
-        if absN >= 1_000     { return String(format: "%.1fk", Double(n) / 1_000.0) }
+        if absN >= 1_000_000 {
+            return String(format: "%.1f Mio", Double(n) / 1_000_000.0)
+                .replacingOccurrences(of: ".", with: ",")
+        }
+        if absN >= 1_000 {
+            return String(format: "%.1f Tsd", Double(n) / 1_000.0)
+                .replacingOccurrences(of: ".", with: ",")
+        }
         return "\(n)"
     }
     static func full(_ n: Int) -> String {
@@ -576,14 +614,6 @@ enum WCompact {
         nf.numberStyle = .decimal
         nf.locale = Locale(identifier: "de_DE")
         return nf.string(from: NSNumber(value: n)) ?? "\(n)"
-    }
-    static func usd(_ d: Double) -> String {
-        let nf = NumberFormatter()
-        nf.numberStyle = .currency
-        nf.currencyCode = "USD"
-        nf.locale = Locale(identifier: "en_US")
-        nf.maximumFractionDigits = d < 1 ? 3 : 2
-        return nf.string(from: NSNumber(value: d)) ?? "$\(d)"
     }
     static func clock(_ date: Date) -> String {
         let f = DateFormatter()

@@ -302,7 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatusBar(_ r: UsageReport) {
         guard let button = statusItem.button else { return }
         let tokens = r.session.totalTokens
-        button.title = " " + Formatter.compact(tokens)
+        button.title = " " + Formatter.menuBarCompact(tokens)
         button.toolTip = """
         Aktuelle Sitzung: \(Formatter.full(tokens)) Tokens
         Heute: \(Formatter.full(r.today.totalTokens))
@@ -331,12 +331,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - Formatter
 
 enum Formatter {
+    /// Compact German-style abbreviation for token counts. Decimal comma,
+    /// "Mio" for millions, "Tsd" for thousands. Distinct from message-count
+    /// abbreviation ("Nachr.") so the two units are never confused.
     static func compact(_ n: Int) -> String {
+        let absN = abs(n)
+        if absN >= 1_000_000 {
+            return String(format: "%.1f Mio", Double(n) / 1_000_000.0)
+                .replacingOccurrences(of: ".", with: ",")
+        } else if absN >= 1_000 {
+            return String(format: "%.1f Tsd", Double(n) / 1_000.0)
+                .replacingOccurrences(of: ".", with: ",")
+        } else {
+            return "\(n)"
+        }
+    }
+    /// Compact form for the menu-bar status item where horizontal space is
+    /// extremely tight. Uses single-letter suffix.
+    static func menuBarCompact(_ n: Int) -> String {
         let absN = abs(n)
         if absN >= 1_000_000 {
             return String(format: "%.1fM", Double(n) / 1_000_000.0)
         } else if absN >= 1_000 {
-            return String(format: "%.1fk", Double(n) / 1_000.0)
+            return String(format: "%.0fk", Double(n) / 1_000.0)
         } else {
             return "\(n)"
         }

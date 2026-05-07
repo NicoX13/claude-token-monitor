@@ -48,9 +48,20 @@ struct UsageBucket {
 }
 
 struct UsageReport {
+    /// Tokens consumed in the most recent session (active OR just expired).
+    /// When there are no sessions at all (empty data) this is a zero bucket.
     let session: UsageBucket
+    /// Start of the most recent session. `nil` when there are no messages
+    /// at all yet on this machine.
     let sessionStart: Date?
+    /// End of the most recent session = `sessionStart + 5h`. `nil` when no
+    /// messages.
     let sessionResetAt: Date?
+    /// `true` when `now` is still within `[sessionStart, sessionResetAt)`,
+    /// i.e. the user can still send prompts in this window.
+    /// `false` when the most recent session has elapsed (no new prompts have
+    /// arrived to start the next one yet).
+    let isSessionActive: Bool
     let today: UsageBucket
     let week: UsageBucket
     let month: UsageBucket

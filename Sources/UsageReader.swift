@@ -232,32 +232,27 @@ final class UsageReader {
         monthComp.day = 1
         let startOfMonth = cal.date(from: monthComp) ?? startOfToday
 
-        // Sort by time ascending, then walk to find the current 5h session boundary.
+        // Sort by time ascending, then chunk into Anthropic-style fixed-5h
+        // session windows. A new session begins when the message's timestamp
+        // is at or after the end of the last session — i.e. the previous
+        // session has elapsed and this prompt opens a new 5h window.
         let sortedAsc = entries.sorted { $0.0.timestamp < $1.0.timestamp }
         let sessionWindow: TimeInterval = 5 * 3600
-        var sessionStart: Date?
-        if let last = sortedAsc.last {
-            sessionStart = last.0.timestamp
-            for i in stride(from: sortedAsc.count - 1, through: 0, by: -1) {
-                let cur = sortedAsc[i].0.timestamp
-                if i + 1 < sortedAsc.count {
-                    let next = sortedAsc[i + 1].0.timestamp
-                    if next.timeIntervalSince(cur) > sessionWindow {
-                        sessionStart = sortedAsc[i + 1].0.timestamp
-                        break
-                    }
-                }
-                sessionStart = cur
-                if i == 0 { break }
-            }
-            // If session_start is older than 5h before now AND last activity >5h ago,
-            // session has expired — treat as "no active session".
-            if let last = sortedAsc.last?.0.timestamp,
-               now.timeIntervalSince(last) > sessionWindow {
-                sessionStart = nil
+
+        struct WindowRange { let start: Date; let end: Date }
+        var sessions: [WindowRange] = []
+        for (e, _, _) in sortedAsc {
+            if let last = sessions.last, e.timestamp < last.end {
+                // still inside the most recent session window
+            } else {
+                sessions.append(WindowRange(start: e.timestamp,
+                                            end: e.timestamp.addingTimeInterval(sessionWindow)))
             }
         }
-        let sessionResetAt = sessionStart.map { $0.addingTimeInterval(sessionWindow) }
+        let mostRecent = sessions.last
+        let isSessionActive = mostRecent.map { now < $0.end } ?? false
+        let sessionStart = mostRecent?.start
+        let sessionResetAt = mostRecent?.end
 
         var session = UsageBucket()
         var today = UsageBucket()
@@ -271,7 +266,12 @@ final class UsageReader {
             if e.timestamp >= startOfMonth { month.add(e, cost: cost) }
             if e.timestamp >= startOfWeek  { week.add(e, cost: cost) }
             if e.timestamp >= startOfToday { today.add(e, cost: cost) }
-            if let s = sessionStart, e.timestamp >= s {
+            // Session bucket = only the most recent session window, regardless
+            // of whether it's still active or already elapsed. The active flag
+            // tells the UI which label to use.
+            if let s = mostRecent,
+               e.timestamp >= s.start,
+               e.timestamp <  s.end {
                 session.add(e, cost: cost)
             }
         }
@@ -285,6 +285,7 @@ final class UsageReader {
         return UsageReport(session: session,
                            sessionStart: sessionStart,
                            sessionResetAt: sessionResetAt,
+                           isSessionActive: isSessionActive,
                            today: today,
                            week: week,
                            month: month,

@@ -60,11 +60,15 @@ struct PopoverView: View {
     private func sessionSection(_ r: UsageReport) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Aktuelle Sitzung")
+                Text(verbatim: r.isSessionActive
+                     ? "Aktuelle Sitzung"
+                     : "Letzte Sitzung (abgelaufen)")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 if let reset = r.sessionResetAt {
-                    Text("Reset \(Formatter.clockTime(reset))")
+                    Text(verbatim: r.isSessionActive
+                         ? "Reset \(Formatter.clockTime(reset))"
+                         : "Endete \(Formatter.clockTime(reset))")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -75,7 +79,7 @@ struct PopoverView: View {
                     .font(.system(size: 28, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                 if let limit = r.sessionTokenLimit {
-                    Text("/ \(Formatter.compact(limit))")
+                    Text(verbatim: "/ \(Formatter.compact(limit))")
                         .font(.callout.monospacedDigit())
                         .foregroundColor(.secondary)
                 }
@@ -83,6 +87,9 @@ struct PopoverView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
+                Text(verbatim: "\(r.session.messageCount) Nachr.")
+                    .font(.caption.monospacedDigit())
+                    .foregroundColor(.secondary)
             }
 
             // Token-quota progress (only if a plan limit is set)
@@ -91,29 +98,41 @@ struct PopoverView: View {
                 let clamped = min(1.0, max(0.0, used))
                 ProgressView(value: clamped)
                     .tint(clamped > 0.85 ? .orange : .accentColor)
-                Text("\(Int(clamped * 100)) % des Plan-Kontingents verbraucht")
+                Text(verbatim: "\(Int(clamped * 100)) % des Plan-Kontingents verbraucht")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
 
-            // Time-to-reset progress
+            // Time progress: countdown when active, "ended X min ago" when expired.
             if let reset = r.sessionResetAt {
-                let remaining = max(0, reset.timeIntervalSince(tick))
-                let total: Double = 5 * 3600
-                let timeProgress = min(1.0, max(0.0, 1.0 - remaining / total))
-                ProgressView(value: timeProgress)
-                    .tint(.gray)
-                Text("Noch \(timeRemainingString(remaining)) bis Sitzungs-Reset")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                if r.isSessionActive {
+                    let remaining = max(0, reset.timeIntervalSince(tick))
+                    let total: Double = 5 * 3600
+                    let timeProgress = min(1.0, max(0.0, 1.0 - remaining / total))
+                    ProgressView(value: timeProgress).tint(.gray)
+                    Text(verbatim: "Noch \(timeRemainingString(remaining)) bis Sitzungs-Reset")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text(verbatim: "Sitzung beendet \(elapsedSinceString(reset, now: tick)) — wartet auf nächsten Prompt")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             } else {
-                Text("Keine aktive Sitzung — letzte Aktivität liegt > 5 h zurück.")
+                Text(verbatim: "Noch keine Sitzung erfasst.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
 
             tokenChips(bucket: r.session)
         }
+    }
+
+    private func elapsedSinceString(_ then: Date, now: Date) -> String {
+        let s = max(0, Int(now.timeIntervalSince(then)))
+        if s < 60 { return "vor \(s) s" }
+        if s < 3600 { return "vor \(s/60) min" }
+        return "vor \(s/3600) h \(String(format: "%02d", (s%3600)/60)) min"
     }
 
     private func timeRemainingString(_ s: TimeInterval) -> String {
@@ -156,7 +175,7 @@ struct PopoverView: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .frame(width: 50, alignment: .leading)
-                Text("\(bucket.messageCount) Msgs")
+                Text(verbatim: "\(bucket.messageCount) Nachr.")
                     .font(.caption2.monospacedDigit())
                     .foregroundColor(.secondary)
                     .frame(width: 70, alignment: .trailing)
@@ -215,7 +234,7 @@ struct PopoverView: View {
                         Spacer()
                         Text(Formatter.full(bucket.totalTokens))
                             .font(.caption.monospacedDigit())
-                        Text("\(bucket.messageCount) Msgs")
+                        Text(verbatim: "\(bucket.messageCount) Nachr.")
                             .font(.caption.monospacedDigit())
                             .foregroundColor(.secondary)
                             .frame(width: 70, alignment: .trailing)
