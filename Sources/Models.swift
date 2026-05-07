@@ -74,9 +74,18 @@ struct UsageReport {
     let sessionTokenLimit: Int?
 }
 
-/// User-selectable plan presets. Numbers are conservative estimates of the
-/// rough per-5h-session token allowance — Anthropic does not publish hard
-/// caps, so these are "good enough for a progress bar", not contractual.
+/// User-selectable plan presets. Anthropic does not publish hard token caps;
+/// these defaults are calibrated so the percentage display roughly matches
+/// what claude.ai shows under "Plan-Nutzungslimits".
+///
+/// Calibration sample (May 2026, Max 5×):
+///   43 M reported tokens corresponded to ~13 % in the Anthropic dashboard
+///   → ~330 M as the inferred 100 %. Other tiers extrapolated from there.
+///
+/// You can override the limit per plan by editing this file or via the
+/// "Plan" submenu in the status-item right-click menu. The percentage
+/// shown in the popover and widget is an approximation; for the
+/// authoritative number, see https://claude.ai/usage .
 enum SessionPlan: String, CaseIterable {
     case pro    = "pro"
     case max5x  = "max5x"
@@ -85,19 +94,19 @@ enum SessionPlan: String, CaseIterable {
 
     var tokenLimit: Int? {
         switch self {
-        case .pro:    return   250_000
-        case .max5x:  return 1_000_000
-        case .max20x: return 5_000_000
+        case .pro:    return    66_000_000
+        case .max5x:  return   330_000_000
+        case .max20x: return 1_320_000_000
         case .hidden: return nil
         }
     }
 
     var displayName: String {
         switch self {
-        case .pro:    return "Pro (~250k / Session)"
-        case .max5x:  return "Max 5× (~1M / Session)"
-        case .max20x: return "Max 20× (~5M / Session)"
-        case .hidden: return "Limit ausblenden"
+        case .pro:    return "Pro"
+        case .max5x:  return "Max 5×"
+        case .max20x: return "Max 20×"
+        case .hidden: return "Prozent-Anzeige aus"
         }
     }
 }

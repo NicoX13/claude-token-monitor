@@ -58,7 +58,12 @@ struct PopoverView: View {
 
     @ViewBuilder
     private func sessionSection(_ r: UsageReport) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let percent: Int? = {
+            guard let limit = r.sessionTokenLimit, limit > 0 else { return nil }
+            let v = Double(r.session.totalTokens) / Double(limit)
+            return Int((min(1.0, max(0.0, v)) * 100).rounded())
+        }()
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(verbatim: r.isSessionActive
                      ? "Aktuelle Sitzung"
@@ -74,47 +79,47 @@ struct PopoverView: View {
                 }
             }
 
+            // Hero row: percent if a plan is set, otherwise the token count.
             HStack(alignment: .firstTextBaseline) {
-                Text(Formatter.full(r.session.totalTokens))
-                    .font(.system(size: 28, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                if let limit = r.sessionTokenLimit {
-                    Text(verbatim: "/ \(Formatter.compact(limit))")
-                        .font(.callout.monospacedDigit())
+                if let p = percent {
+                    Text(verbatim: "\(p) %")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(p > 85 ? .orange : .primary)
+                    Text("verwendet")
+                        .font(.callout)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text(Formatter.full(r.session.totalTokens))
+                        .font(.system(size: 28, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                    Text("Tokens")
+                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                Text("Tokens")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
                 Spacer()
-                Text(verbatim: "\(r.session.messageCount) Nachr.")
-                    .font(.caption.monospacedDigit())
-                    .foregroundColor(.secondary)
             }
 
             // Token-quota progress (only if a plan limit is set)
-            if let limit = r.sessionTokenLimit, limit > 0 {
-                let used = Double(r.session.totalTokens) / Double(limit)
-                let clamped = min(1.0, max(0.0, used))
-                ProgressView(value: clamped)
-                    .tint(clamped > 0.85 ? .orange : .accentColor)
-                Text(verbatim: "\(Int(clamped * 100)) % des Plan-Kontingents verbraucht")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            if let p = percent {
+                ProgressView(value: Double(p) / 100.0)
+                    .tint(p > 85 ? .orange : .accentColor)
             }
 
-            // Time progress: countdown when active, "ended X min ago" when expired.
+            // Sub-line: tokens & messages as raw figures (always shown).
+            Text(verbatim: "\(Formatter.compact(r.session.totalTokens)) Tokens · \(r.session.messageCount) Nachr.")
+                .font(.caption.monospacedDigit())
+                .foregroundColor(.secondary)
+
+            // Time-line: countdown when active, "ended X ago" when expired.
             if let reset = r.sessionResetAt {
                 if r.isSessionActive {
                     let remaining = max(0, reset.timeIntervalSince(tick))
-                    let total: Double = 5 * 3600
-                    let timeProgress = min(1.0, max(0.0, 1.0 - remaining / total))
-                    ProgressView(value: timeProgress).tint(.gray)
-                    Text(verbatim: "Noch \(timeRemainingString(remaining)) bis Sitzungs-Reset")
+                    Text(verbatim: "Reset in \(timeRemainingString(remaining))")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 } else {
-                    Text(verbatim: "Sitzung beendet \(elapsedSinceString(reset, now: tick)) — wartet auf nächsten Prompt")
+                    Text(verbatim: "Beendet \(elapsedSinceString(reset, now: tick)) — wartet auf nächsten Prompt")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -123,8 +128,6 @@ struct PopoverView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-
-            tokenChips(bucket: r.session)
         }
     }
 

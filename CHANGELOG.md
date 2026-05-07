@@ -7,7 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.2] — 2026-05-07
+## [1.2.0] — 2026-05-07
+
+### Changed
+- **Hero number switched from raw tokens to percent.** Anthropic's own
+  "Plan-Nutzungslimits" page on claude.ai shows `13 % verwendet`, which
+  is much easier to read at a glance than `43.096.892 / 5,0 Mio`.
+  The popover and all three widget sizes now show the percent
+  prominently with the token + message counts as a small secondary
+  line. The progress bar mirrors the percent.
+- **Plan token limits recalibrated.** A user on Max 5× sent us a
+  screenshot showing 13 % consumed at 43 M reported tokens, which
+  implies a 100 % point at ~330 M. New defaults:
+    - Pro:    66 M (was 250 k — off by ~260×)
+    - Max 5×: 330 M (was 1 M — off by ~330×)
+    - Max 20×: 1.32 Mrd (was 5 M — off by ~260×)
+  These are still approximations because Anthropic doesn't publish
+  exact caps, but the percentage now closely matches what claude.ai
+  shows. The "Plan" submenu copy is shorter (just "Pro" / "Max 5×"
+  / "Max 20×" / "Prozent-Anzeige aus") since the absolute numbers
+  are no longer the headline.
+- **Default plan is now Max 5×** (was Max 20×). Most current Claude
+  Code subscribers are on Max 5×; users on a different plan can
+  still flip via the right-click menu.
+
+### Fixed
+- "Limit ausblenden" mode now falls back to the raw token count
+  (and the time-elapsed progress bar) instead of leaving the
+  progress bar empty.
 
 ### Fixed
 - **Session detection now uses Anthropic-style fixed 5-h windows.** The

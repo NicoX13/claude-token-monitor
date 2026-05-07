@@ -317,6 +317,7 @@ struct DesktopEntry {
 private struct WidgetSmall: View {
     let entry: DesktopEntry
     var body: some View {
+        let pct = entry.percentUsed
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: "sparkles")
@@ -328,37 +329,43 @@ private struct WidgetSmall: View {
                 Spacer()
             }
             Spacer(minLength: 2)
-            Text(verbatim: WCompact.compact(entry.sessionTokens))
-                .font(.system(size: 38, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundColor(.white)
-                .minimumScaleFactor(0.6)
-                .lineLimit(1)
-            if let limit = entry.sessionTokenLimit {
-                Text(verbatim: "von \(WCompact.compact(limit)) · Session")
+            // Hero number: percent if a plan is set, else compact tokens.
+            if let p = pct {
+                Text(verbatim: "\(p) %")
+                    .font(.system(size: 42, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundColor(p > 85 ? .orange : .white)
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                Text(verbatim: "verwendet · Session")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.white.opacity(0.55))
             } else {
+                Text(verbatim: WCompact.compact(entry.sessionTokens))
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundColor(.white)
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
                 Text(verbatim: "Tokens · Session")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.white.opacity(0.55))
             }
             Spacer(minLength: 4)
-            sessionFooter
+            sessionFooter(pct: pct)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     @ViewBuilder
-    private var sessionFooter: some View {
+    private func sessionFooter(pct: Int?) -> some View {
         if let reset = entry.sessionResetAt {
-            // Prefer the token-quota progress when a plan limit is set;
-            // otherwise fall back to the time-to-reset progress.
+            // Progress bar mirrors the hero — tokens-percent when a plan is
+            // set, otherwise falls back to the elapsed time within the 5h
+            // window (which is what the user has from a non-plan POV).
             let progress: Double = {
-                if let limit = entry.sessionTokenLimit, limit > 0 {
-                    return min(1, max(0, Double(entry.sessionTokens) / Double(limit)))
-                }
+                if let p = pct { return Double(p) / 100.0 }
                 if let start = entry.sessionStart {
                     let total: Double = 5 * 3600
                     return min(1, max(0, entry.now.timeIntervalSince(start) / total))
@@ -387,6 +394,16 @@ private struct WidgetSmall: View {
     }
 }
 
+extension DesktopEntry {
+    /// Approximate "% of session quota used" — `nil` when the user has set
+    /// the plan to "hidden", which falls back to raw token counts.
+    var percentUsed: Int? {
+        guard let limit = sessionTokenLimit, limit > 0 else { return nil }
+        let v = Double(sessionTokens) / Double(limit)
+        return Int((min(1.0, max(0.0, v)) * 100).rounded())
+    }
+}
+
 private struct WidgetMedium: View {
     let entry: DesktopEntry
     var body: some View {
@@ -400,24 +417,33 @@ private struct WidgetMedium: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white.opacity(0.85))
                 }
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(verbatim: WCompact.compact(entry.sessionTokens))
-                        .font(.system(size: 40, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundColor(.white)
-                        .minimumScaleFactor(0.6)
-                        .lineLimit(1)
-                    if let limit = entry.sessionTokenLimit {
-                        Text(verbatim: "/ \(WCompact.compact(limit))")
-                            .font(.system(size: 14, weight: .medium).monospacedDigit())
+                let pct = entry.percentUsed
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    if let p = pct {
+                        Text(verbatim: "\(p) %")
+                            .font(.system(size: 44, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundColor(p > 85 ? .orange : .white)
+                            .minimumScaleFactor(0.6)
+                            .lineLimit(1)
+                        Text(verbatim: "verwendet")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                    } else {
+                        Text(verbatim: WCompact.compact(entry.sessionTokens))
+                            .font(.system(size: 36, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundColor(.white)
+                            .minimumScaleFactor(0.6)
+                            .lineLimit(1)
+                        Text(verbatim: "Tokens")
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.white.opacity(0.6))
                     }
                 }
                 if let reset = entry.sessionResetAt {
                     let progress: Double = {
-                        if let limit = entry.sessionTokenLimit, limit > 0 {
-                            return min(1, max(0, Double(entry.sessionTokens) / Double(limit)))
-                        }
+                        if let p = pct { return Double(p) / 100.0 }
                         if let start = entry.sessionStart {
                             let total: Double = 5 * 3600
                             return min(1, max(0, entry.now.timeIntervalSince(start) / total))
@@ -427,6 +453,9 @@ private struct WidgetMedium: View {
                     ProgressView(value: progress)
                         .tint(progress > 0.85 ? .orange : .white.opacity(0.85))
                         .scaleEffect(x: 1, y: 0.7, anchor: .center)
+                    Text(verbatim: "\(WCompact.compact(entry.sessionTokens)) Tokens · \(entry.sessionMessages) Nachr.")
+                        .font(.system(size: 9, weight: .medium).monospacedDigit())
+                        .foregroundColor(.white.opacity(0.5))
                     Text(verbatim: entry.isSessionActive
                          ? "Reset \(WCompact.clock(reset))"
                          : "Endete \(WCompact.clock(reset))")
@@ -487,35 +516,38 @@ private struct WidgetLarge: View {
                 }
             }
             VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(verbatim: WCompact.full(entry.sessionTokens))
-                        .font(.system(size: 44, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundColor(.white)
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(1)
-                    if let limit = entry.sessionTokenLimit {
-                        Text(verbatim: "/ \(WCompact.compact(limit))")
-                            .font(.system(size: 16, weight: .medium).monospacedDigit())
+                let pct = entry.percentUsed
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if let p = pct {
+                        Text(verbatim: "\(p) %")
+                            .font(.system(size: 56, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundColor(p > 85 ? .orange : .white)
+                            .minimumScaleFactor(0.5)
+                            .lineLimit(1)
+                        Text(verbatim: "verwendet")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                    } else {
+                        Text(verbatim: WCompact.full(entry.sessionTokens))
+                            .font(.system(size: 44, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundColor(.white)
+                            .minimumScaleFactor(0.5)
+                            .lineLimit(1)
+                        Text(verbatim: "Tokens")
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.white.opacity(0.6))
                     }
                 }
-                HStack(spacing: 8) {
-                    Text(verbatim: entry.isSessionActive
-                         ? "Tokens · aktive Sitzung"
-                         : "Tokens · letzte Sitzung (abgelaufen)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.6))
-                    Spacer()
-                    Text(verbatim: "\(entry.sessionMessages) Nachr.")
-                        .font(.system(size: 11, weight: .medium).monospacedDigit())
-                        .foregroundColor(.white.opacity(0.6))
-                }
+                Text(verbatim: entry.isSessionActive
+                     ? "Aktuelle Sitzung"
+                     : "Letzte Sitzung (abgelaufen)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
                 if let reset = entry.sessionResetAt {
                     let progress: Double = {
-                        if let limit = entry.sessionTokenLimit, limit > 0 {
-                            return min(1, max(0, Double(entry.sessionTokens) / Double(limit)))
-                        }
+                        if let p = pct { return Double(p) / 100.0 }
                         if let start = entry.sessionStart {
                             let total: Double = 5 * 3600
                             return min(1, max(0, entry.now.timeIntervalSince(start) / total))
@@ -525,6 +557,9 @@ private struct WidgetLarge: View {
                     ProgressView(value: progress)
                         .tint(progress > 0.85 ? .orange : .white.opacity(0.85))
                         .scaleEffect(x: 1, y: 0.8, anchor: .center)
+                    Text(verbatim: "\(WCompact.compact(entry.sessionTokens)) Tokens · \(entry.sessionMessages) Nachr.")
+                        .font(.system(size: 10, weight: .medium).monospacedDigit())
+                        .foregroundColor(.white.opacity(0.5))
                     if entry.isSessionActive {
                         let remaining = max(0, reset.timeIntervalSince(entry.now))
                         let h = Int(remaining) / 3600
