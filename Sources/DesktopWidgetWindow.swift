@@ -280,14 +280,14 @@ private struct DesktopWidgetView: View {
             sessionResetAt: r.sessionResetAt,
             isSessionActive: r.isSessionActive,
             sessionTokenLimit: r.sessionTokenLimit,
-            todayTokens: r.today.totalTokens,
-            todayMessages: r.today.messageCount,
             weekTokens: r.week.totalTokens,
             weekMessages: r.week.messageCount,
-            monthTokens: r.month.totalTokens,
-            monthMessages: r.month.messageCount,
-            allTimeTokens: r.allTime.totalTokens,
-            allTimeMessages: r.allTime.messageCount,
+            weekSonnetTokens: r.weekSonnet.totalTokens,
+            weekOpusTokens: r.weekOpus.totalTokens,
+            weekResetAt: r.weekResetAt,
+            weeklyAllLimit: r.weeklyAllLimit,
+            weeklySonnetLimit: r.weeklySonnetLimit,
+            weeklyOpusLimit: r.weeklyOpusLimit,
             lastActivity: r.lastMessageAt
         )
     }
@@ -301,15 +301,29 @@ struct DesktopEntry {
     let sessionResetAt: Date?
     let isSessionActive: Bool
     let sessionTokenLimit: Int?
-    let todayTokens: Int
-    let todayMessages: Int
+    // Weekly buckets — Anthropic-style three-row breakdown.
     let weekTokens: Int
     let weekMessages: Int
-    let monthTokens: Int
-    let monthMessages: Int
-    let allTimeTokens: Int
-    let allTimeMessages: Int
+    let weekSonnetTokens: Int
+    let weekOpusTokens: Int
+    let weekResetAt: Date
+    let weeklyAllLimit: Int?
+    let weeklySonnetLimit: Int?
+    let weeklyOpusLimit: Int?
     let lastActivity: Date?
+
+    // MARK: - Helpers
+
+    /// Approximate "% of session quota used" — `nil` when limit hidden.
+    var percentUsed: Int? {
+        guard let limit = sessionTokenLimit, limit > 0 else { return nil }
+        let v = Double(sessionTokens) / Double(limit)
+        return Int((min(1.0, max(0.0, v)) * 100).rounded())
+    }
+    func percent(_ used: Int, of limit: Int?) -> Int? {
+        guard let l = limit, l > 0 else { return nil }
+        return Int((min(1.0, max(0.0, Double(used) / Double(l))) * 100).rounded())
+    }
 }
 
 // MARK: - Sizes
@@ -394,16 +408,6 @@ private struct WidgetSmall: View {
     }
 }
 
-extension DesktopEntry {
-    /// Approximate "% of session quota used" — `nil` when the user has set
-    /// the plan to "hidden", which falls back to raw token counts.
-    var percentUsed: Int? {
-        guard let limit = sessionTokenLimit, limit > 0 else { return nil }
-        let v = Double(sessionTokens) / Double(limit)
-        return Int((min(1.0, max(0.0, v)) * 100).rounded())
-    }
-}
-
 private struct WidgetMedium: View {
     let entry: DesktopEntry
     var body: some View {
@@ -469,10 +473,27 @@ private struct WidgetMedium: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Divider().background(Color.white.opacity(0.15))
-            VStack(alignment: .leading, spacing: 8) {
-                statRow("Heute", tokens: entry.todayTokens, msgs: entry.todayMessages)
-                statRow("Woche", tokens: entry.weekTokens,  msgs: entry.weekMessages)
-                statRow("Monat", tokens: entry.monthTokens, msgs: entry.monthMessages)
+            // Right column = weekly limits, mirroring the Anthropic dashboard
+            // ("Wöchentliche Limits"). Three rows (Alle/Sonnet/Opus) with
+            // percent + thin progress bar. The Mon-06:00 reset is implicit
+            // via the section title; we keep the rows compact.
+            VStack(alignment: .leading, spacing: 7) {
+                Text(verbatim: "Wöchentlich")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.7))
+                weeklyRow("Alle Modelle",
+                          pct: entry.percent(entry.weekTokens, of: entry.weeklyAllLimit),
+                          fallbackText: nil)
+                weeklyRow("Nur Sonnet",
+                          pct: entry.percent(entry.weekSonnetTokens, of: entry.weeklySonnetLimit),
+                          fallbackText: entry.weekSonnetTokens == 0 ? "nicht genutzt" : nil)
+                weeklyRow("Nur Opus",
+                          pct: entry.percent(entry.weekOpusTokens, of: entry.weeklyOpusLimit),
+                          fallbackText: entry.weekOpusTokens == 0 ? "nicht genutzt" : nil)
+                Spacer(minLength: 0)
+                Text(verbatim: "Reset Mo., 06:00")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.white.opacity(0.4))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -480,19 +501,26 @@ private struct WidgetMedium: View {
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    private func statRow(_ label: String, tokens: Int, msgs: Int) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(verbatim: label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.white.opacity(0.55))
-                .frame(width: 38, alignment: .leading)
-            Text(verbatim: WCompact.compact(tokens))
-                .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
-                .foregroundColor(.white)
-            Spacer()
-            Text(verbatim: "\(msgs) Nachr.")
-                .font(.system(size: 10, weight: .medium).monospacedDigit())
-                .foregroundColor(.white.opacity(0.55))
+    private func weeklyRow(_ label: String, pct: Int?, fallbackText: String?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(verbatim: label)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white.opacity(0.7))
+                Spacer()
+                if let p = pct {
+                    Text(verbatim: "\(p) %")
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .foregroundColor(p > 85 ? .orange : .white)
+                } else if let txt = fallbackText {
+                    Text(verbatim: txt)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.white.opacity(0.45))
+                }
+            }
+            ProgressView(value: Double(pct ?? 0) / 100.0)
+                .tint((pct ?? 0) > 85 ? .orange : .white.opacity(0.7))
+                .scaleEffect(x: 1, y: 0.55, anchor: .center)
         }
     }
 }
@@ -597,11 +625,27 @@ private struct WidgetLarge: View {
                 }
             }
             Divider().background(Color.white.opacity(0.12))
-            VStack(spacing: 8) {
-                largeRow("Heute",  tokens: entry.todayTokens,    msgs: entry.todayMessages)
-                largeRow("Woche",  tokens: entry.weekTokens,     msgs: entry.weekMessages)
-                largeRow("Monat",  tokens: entry.monthTokens,    msgs: entry.monthMessages)
-                largeRow("Gesamt", tokens: entry.allTimeTokens,  msgs: entry.allTimeMessages)
+
+            // Wöchentliche Limits (Anthropic-Layout)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(verbatim: "Wöchentliche Limits")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.85))
+                largeWeeklyRow(label: "Alle Modelle",
+                               pct: entry.percent(entry.weekTokens, of: entry.weeklyAllLimit),
+                               fallbackText: nil,
+                               showResetHint: true,
+                               resetAt: entry.weekResetAt)
+                largeWeeklyRow(label: "Nur Sonnet",
+                               pct: entry.percent(entry.weekSonnetTokens, of: entry.weeklySonnetLimit),
+                               fallbackText: entry.weekSonnetTokens == 0 ? "Sonnet diese Woche nicht genutzt" : nil,
+                               showResetHint: false,
+                               resetAt: entry.weekResetAt)
+                largeWeeklyRow(label: "Nur Opus",
+                               pct: entry.percent(entry.weekOpusTokens, of: entry.weeklyOpusLimit),
+                               fallbackText: entry.weekOpusTokens == 0 ? "Opus diese Woche nicht genutzt" : nil,
+                               showResetHint: false,
+                               resetAt: entry.weekResetAt)
             }
             Spacer(minLength: 0)
         }
@@ -609,19 +653,37 @@ private struct WidgetLarge: View {
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-    private func largeRow(_ label: String, tokens: Int, msgs: Int) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(verbatim: label)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.white.opacity(0.55))
-                .frame(width: 60, alignment: .leading)
-            Text(verbatim: WCompact.full(tokens))
-                .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
-                .foregroundColor(.white)
-            Spacer()
-            Text(verbatim: "\(msgs) Nachr.")
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
-                .foregroundColor(.white.opacity(0.55))
+    private func largeWeeklyRow(label: String,
+                                pct: Int?,
+                                fallbackText: String?,
+                                showResetHint: Bool,
+                                resetAt: Date) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: label)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.85))
+                    if let txt = fallbackText {
+                        Text(verbatim: txt)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.white.opacity(0.5))
+                    } else if showResetHint {
+                        Text(verbatim: "Zurücksetzung Mo., 06:00")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                }
+                Spacer()
+                if let p = pct {
+                    Text(verbatim: "\(p) % verwendet")
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .foregroundColor(p > 85 ? .orange : .white.opacity(0.85))
+                }
+            }
+            ProgressView(value: Double(pct ?? 0) / 100.0)
+                .tint((pct ?? 0) > 85 ? .orange : .white.opacity(0.7))
+                .scaleEffect(x: 1, y: 0.6, anchor: .center)
         }
     }
 }

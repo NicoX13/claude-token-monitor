@@ -301,14 +301,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusBar(_ r: UsageReport) {
         guard let button = statusItem.button else { return }
-        let tokens = r.session.totalTokens
-        button.title = " " + Formatter.menuBarCompact(tokens)
-        button.toolTip = """
-        Aktuelle Sitzung: \(Formatter.full(tokens)) Tokens
-        Heute: \(Formatter.full(r.today.totalTokens))
-        Woche: \(Formatter.full(r.week.totalTokens))
-        Klick für Details
-        """
+        // Headline: percent of session quota when a plan is set, raw token
+        // count when the user has chosen "Prozent-Anzeige aus".
+        if let limit = r.sessionTokenLimit, limit > 0 {
+            let pct = Int((min(1.0, max(0.0, Double(r.session.totalTokens) / Double(limit))) * 100).rounded())
+            button.title = " \(pct)%"
+        } else {
+            button.title = " " + Formatter.menuBarCompact(r.session.totalTokens)
+        }
+        // Tooltip mirrors the full Anthropic dashboard so power users can see
+        // every number on hover without clicking.
+        button.toolTip = makeTooltip(r)
+    }
+
+    private func makeTooltip(_ r: UsageReport) -> String {
+        func pct(_ used: Int, limit: Int?) -> String {
+            guard let l = limit, l > 0 else { return "—" }
+            let v = Int((min(1.0, max(0.0, Double(used) / Double(l))) * 100).rounded())
+            return "\(v) %"
+        }
+        var lines: [String] = []
+        lines.append("Aktuelle Sitzung: \(pct(r.session.totalTokens, limit: r.sessionTokenLimit)) verwendet")
+        lines.append("\(Formatter.compact(r.session.totalTokens)) Tokens · \(r.session.messageCount) Nachr.")
+        lines.append("")
+        lines.append("Wöchentliche Limits:")
+        lines.append("· Alle Modelle: \(pct(r.week.totalTokens, limit: r.weeklyAllLimit)) verwendet")
+        lines.append("· Nur Sonnet:   \(pct(r.weekSonnet.totalTokens, limit: r.weeklySonnetLimit)) verwendet")
+        lines.append("· Nur Opus:     \(pct(r.weekOpus.totalTokens, limit: r.weeklyOpusLimit)) verwendet")
+        lines.append("")
+        lines.append("Klick für Details")
+        return lines.joined(separator: "\n")
     }
 
     private func makeTemplateIcon() -> NSImage {

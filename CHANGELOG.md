@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-05-07
+
+### Added
+- **Desktop widget now mirrors the Anthropic dashboard layout.** The
+  weekly limits introduced for the popover in 1.3.0 are now also
+  surfaced in the medium and large widget sizes:
+    - **Medium (348 × 165):** session percent on the left, three
+      weekly rows ("Alle Modelle", "Nur Sonnet", "Nur Opus") with
+      mini progress bars on the right, plus a "Reset Mo., 06:00"
+      footnote.
+    - **Large (348 × 348):** full Anthropic-style "Wöchentliche
+      Limits" section under the session block, each row with its
+      own percent indicator and progress bar.
+- **Status-item now shows percent.** The menu-bar headline switched
+  from compact tokens (`✦ 52,5M`) to plan percentage (`✦ 17%`) so
+  it matches the rest of the UI. Falls back to the compact token
+  count when the user has chosen "Prozent-Anzeige aus".
+- **Status-item tooltip mirrors the Anthropic dashboard.** Hovering
+  the menu-bar item shows session %, plus the three weekly rows
+  (Alle Modelle / Nur Sonnet / Nur Opus) at a glance — no click
+  needed for a quick check.
+
+### Changed
+- Small widget keeps its existing percent-only design — it has too
+  little room for the weekly breakdown. Use medium or large for the
+  full panel.
+
 ## [1.3.0] — 2026-05-07
 
 ### Added
