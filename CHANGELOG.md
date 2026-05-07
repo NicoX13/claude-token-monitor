@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-05-07
+
+### Changed
+- Polling fallback interval relaxed from 5 s to **60 s**. The
+  `DispatchSource` file-system watcher already triggers a refresh
+  within ~1 s of any Claude Code write, so frequent polling was
+  unnecessary CPU/IO. The 60 s timer now only acts as a safety net for
+  edge cases where the watcher might miss an event (network mounts,
+  sleep/wake races).
+
+### Fixed
+- `install.sh` now always kills the running `ClaudeTokenMonitor`
+  process before overwriting the bundle, even when the destination
+  doesn't exist yet. Previously the script only killed when
+  `/Applications/Claude Token Monitor.app` was already present, so a
+  manual `cp -R` over a running app would leave the process executing
+  the *old* in-memory binary until the user restarted it manually —
+  exactly the symptom that made v1.1.0 feel broken on first launch
+  for some users.
+
 ## [1.1.0] — 2026-05-07
 
 ### Added

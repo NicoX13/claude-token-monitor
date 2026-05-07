@@ -67,7 +67,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     //      the user brings our app forward.
 
     private func startRefreshTimer() {
-        let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
+        // 60 s is the safety-net poll. The FS watcher below already gives
+        // sub-second updates whenever Claude Code writes to a JSONL file,
+        // so we only need polling as a fallback for cases where the
+        // watcher might miss something (network mounts, sleep/wake races).
+        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             self?.refresh()
         }
         // .common = fires during menu tracking, modal sessions, scroll-event

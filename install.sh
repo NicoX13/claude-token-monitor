@@ -15,11 +15,18 @@ if [[ ! -d "${SRC_APP}" ]]; then
 fi
 
 echo "==> Installing to /Applications"
-if [[ -d "${DEST_APP}" ]]; then
-    # Quit the existing copy so we can overwrite it. Match by exact basename
-    # of the binary so we never kill something unrelated.
-    pkill -x "ClaudeTokenMonitor" 2>/dev/null || true
+# Always quit the running instance (if any) before touching the bundle. macOS
+# keeps the old binary mmap'd; overwriting the file in /Applications without
+# killing the process leaves it executing the old code until a manual restart.
+pkill -x "ClaudeTokenMonitor" 2>/dev/null || true
+# Wait until it's actually gone (max 5 s), so the cp below can't race the
+# still-shutting-down process.
+for _ in 1 2 3 4 5; do
+    pgrep -x "ClaudeTokenMonitor" >/dev/null 2>&1 || break
     sleep 1
+done
+
+if [[ -d "${DEST_APP}" ]]; then
     rm -rf "${DEST_APP}"
 fi
 cp -R "${SRC_APP}" "${DEST_APP}"
