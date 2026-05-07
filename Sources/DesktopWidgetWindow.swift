@@ -386,10 +386,10 @@ private struct WidgetSmall: View {
                 }
                 return 0
             }()
-            VStack(alignment: .leading, spacing: 3) {
-                ProgressView(value: progress)
-                    .tint(progress > 0.85 ? .orange : .white.opacity(0.85))
-                    .scaleEffect(x: 1, y: 0.7, anchor: .center)
+            VStack(alignment: .leading, spacing: 4) {
+                WBar(value: progress,
+                     color: progress > 0.85 ? .orange : .white.opacity(0.85),
+                     thickness: 4)
                 HStack {
                     Text(verbatim: entry.isSessionActive ? "Reset" : "Endete")
                         .font(.system(size: 9, weight: .medium))
@@ -454,9 +454,9 @@ private struct WidgetMedium: View {
                         }
                         return 0
                     }()
-                    ProgressView(value: progress)
-                        .tint(progress > 0.85 ? .orange : .white.opacity(0.85))
-                        .scaleEffect(x: 1, y: 0.7, anchor: .center)
+                    WBar(value: progress,
+                         color: progress > 0.85 ? .orange : .white.opacity(0.85),
+                         thickness: 5)
                     Text(verbatim: "\(WCompact.compact(entry.sessionTokens)) Tokens · \(entry.sessionMessages) Nachr.")
                         .font(.system(size: 9, weight: .medium).monospacedDigit())
                         .foregroundColor(.white.opacity(0.5))
@@ -518,9 +518,9 @@ private struct WidgetMedium: View {
                         .foregroundColor(.white.opacity(0.45))
                 }
             }
-            ProgressView(value: Double(pct ?? 0) / 100.0)
-                .tint((pct ?? 0) > 85 ? .orange : .white.opacity(0.7))
-                .scaleEffect(x: 1, y: 0.55, anchor: .center)
+            WBar(value: Double(pct ?? 0) / 100.0,
+                 color: (pct ?? 0) > 85 ? .orange : .white.opacity(0.7),
+                 thickness: 4)
         }
     }
 }
@@ -582,9 +582,9 @@ private struct WidgetLarge: View {
                         }
                         return 0
                     }()
-                    ProgressView(value: progress)
-                        .tint(progress > 0.85 ? .orange : .white.opacity(0.85))
-                        .scaleEffect(x: 1, y: 0.8, anchor: .center)
+                    WBar(value: progress,
+                         color: progress > 0.85 ? .orange : .white.opacity(0.85),
+                         thickness: 6)
                     Text(verbatim: "\(WCompact.compact(entry.sessionTokens)) Tokens · \(entry.sessionMessages) Nachr.")
                         .font(.system(size: 10, weight: .medium).monospacedDigit())
                         .foregroundColor(.white.opacity(0.5))
@@ -671,9 +671,9 @@ private struct WidgetLarge: View {
                         .foregroundColor(p > 85 ? .orange : .white.opacity(0.85))
                 }
             }
-            ProgressView(value: Double(pct ?? 0) / 100.0)
-                .tint((pct ?? 0) > 85 ? .orange : .white.opacity(0.7))
-                .scaleEffect(x: 1, y: 0.6, anchor: .center)
+            WBar(value: Double(pct ?? 0) / 100.0,
+                 color: (pct ?? 0) > 85 ? .orange : .white.opacity(0.7),
+                 thickness: 5)
         }
     }
 }
@@ -707,5 +707,27 @@ enum WCompact {
         f.dateFormat = "HH:mm"
         f.locale = Locale(identifier: "de_DE")
         return f.string(from: date)
+    }
+}
+
+/// Custom progress bar — `ProgressView` renders an extremely thin track on
+/// macOS (≈2 pt after the `.scaleEffect(y: 0.55–0.8)` we used to apply),
+/// which made the widget bars almost invisible against the dark background.
+/// This replacement is a fixed-height Capsule with controllable thickness.
+struct WBar: View {
+    let value: Double          // 0 … 1
+    let color: Color
+    var thickness: CGFloat = 5
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(Color.white.opacity(0.12))
+                Capsule(style: .continuous)
+                    .fill(color)
+                    .frame(width: min(1, max(0, value)) * geo.size.width)
+            }
+        }
+        .frame(height: thickness)
     }
 }

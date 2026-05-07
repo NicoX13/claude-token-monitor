@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] — 2026-05-07
+
+### Fixed
+- **Progress bars in the desktop widget were nearly invisible.** macOS's
+  `ProgressView` renders a ~4 pt-tall track by default, and we'd shrunk it
+  further with `.scaleEffect(y: 0.55–0.8)` to fit each row, leaving 2–3 px
+  of bar that disappeared into the dark widget background. Replaced with a
+  custom `WBar` (Capsule + fill) at fixed 4–6 pt heights that stay
+  readable at 100 % opacity. Affects all widget sizes; the popover still
+  uses the standard `ProgressView` because its higher contrast and slightly
+  larger track work fine on the system background.
+
 ## [1.4.1] — 2026-05-07
 
 ### Fixed
