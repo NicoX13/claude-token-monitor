@@ -1,0 +1,53 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please fill in the boxes below.
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: e.g. 15.4.1, 26.3.1
+    validations:
+      required: true
+  - type: input
+    id: claude_code
+    attributes:
+      label: Claude Code version
+      description: Run `claude --version` if installed.
+      placeholder: e.g. 2.1.128
+  - type: input
+    id: app_version
+    attributes:
+      label: Claude Token Monitor version
+      placeholder: e.g. 1.0.0
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Describe the bug. What did you expect, what did you see?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Run this and paste the output:
+        ```
+        log show --predicate 'process == "ClaudeTokenMonitor"' --last 5m | tail -100
+        ```
+      render: shell

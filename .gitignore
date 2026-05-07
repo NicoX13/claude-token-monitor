@@ -1,0 +1,45 @@
+# Build artefacts
+.build/
+DerivedData/
+*.dSYM/
+*.app/
+*.appex/
+*.xcarchive/
+
+# Xcode (in case anyone opens this in Xcode later)
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# SwiftPM
+.swiftpm/
+Package.resolved
+
+# macOS junk
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test / debug output
+/tmp/
+*.log
