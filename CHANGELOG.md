@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-05-07
+
+### Added
+- **Data-source disclaimer in the UI.** Both popover and large widget
+  now carry a small "nur Claude Code"-tag next to the "Wöchentliche
+  Limits" header, plus a footer note in the popover making clear that
+  claude.ai web / desktop / mobile usage is not visible to the widget
+  and that the percentage is an approximation. Empty Sonnet/Opus rows
+  read "via Claude Code noch nicht genutzt" (instead of the old
+  "Sonnet diese Woche nicht genutzt") to subtly hint at the source.
+- README: a new "Important caveat" section explaining what the app
+  cannot see, plus a calibration table showing the per-plan token
+  caps used for the percentage display.
+
+### Changed
+- **Outer rounded shell scales with widget size.** The corner radius,
+  outer padding, and drop-shadow radius are now picked per size:
+    - Small:  22 pt corner / 6 pt padding / 14 pt shadow
+    - Medium: 24 pt corner / 8 pt padding / 18 pt shadow
+    - Large:  28 pt corner / 10 pt padding / 24 pt shadow
+  Previously every size used the same fixed values (22 / 6 / 16),
+  which looked proportional on the small footprint but visibly
+  cramped on the medium and large bodies. The shell now feels
+  consistent across all three sizes.
+- **Weekly "all models" cap recalibrated** based on the current
+  Anthropic Max-5× dashboard sample (7 % at ~152 M tokens). Old
+  baseline was 1.7 Mrd, new baseline is 2.0 Mrd. Pro / Max 20×
+  scaled accordingly.
+
+### Note
+The "Nur Sonnet" / "Nur Opus" rows in this widget show only what
+Claude Code wrote to `~/.claude/projects/`. If you also use claude.ai
+in the browser, those tokens are absent here. The exact, authoritative
+numbers are always at https://claude.ai/usage.
+
 ## [1.4.2] — 2026-05-07
 
 ### Fixed

@@ -11,9 +11,15 @@
 
 Free for everyone to use, fork, modify and ship under the MIT license.
 
-- **Menu-bar item** with a live token counter
-- **Detail popover** with session / today / week / month / all-time stats
-- **Desktop widget** (small / medium / large) styled like macOS Tahoe widgets
+- **Menu-bar item** with live percent of session quota (`✦ 17%`)
+- **Detail popover** mirroring claude.ai/usage:
+  *Aktuelle Sitzung* + *Wöchentliche Limits* (Alle Modelle, Nur Sonnet, Nur Opus)
+- **Desktop widget** (small / medium / large) in the same Anthropic-style
+  layout, dark-glass design that fits next to macOS Tahoe widgets
+- **Plan presets** (Pro / Max 5× / Max 20×) with sensible default token
+  caps you can override via the right-click menu
+- **Sub-second updates** when Claude Code writes to a JSONL — no polling
+  spam, no stale numbers
 
 All data is read locally from `~/.claude/projects/`. No network. No
 telemetry. Builds with the standard Command Line Tools — **no Xcode required**.
@@ -61,11 +67,31 @@ The app does **not** call any API. It reads your own Claude Code session
 logs at `~/.claude/projects/<project>/<session-uuid>.jsonl`. Every assistant
 response logged there contains a `usage` object with `input_tokens`,
 `output_tokens`, `cache_creation_input_tokens`, and `cache_read_input_tokens`.
-The app deduplicates via `message.id` and aggregates into session / today /
-week / month / all-time buckets. **Nothing leaves your machine.**
+The app deduplicates via `message.id` and aggregates into:
 
-If the popover shows zeros, you simply haven't run Claude Code yet on this
-Mac — fire one prompt and it'll show up within 30 seconds.
+- the current **5-h session** window (matches Anthropic's rate-limit clock),
+- the current **week** since the last Mon 06:00 reset,
+- with separate Sonnet / Opus filters for the weekly view.
+
+**Nothing leaves your machine.** If the popover shows zeros, you simply
+haven't run Claude Code yet on this Mac — fire one prompt and it'll show
+up within ~1 second (a `DispatchSource` watcher reacts to file writes).
+
+#### Important caveat — what the app does *not* see
+
+Claude Code writes to `~/.claude/projects`, but **claude.ai (web)**,
+**Claude Desktop**, and **mobile apps** do not. If you also chat there,
+their tokens are absent from this widget's numbers. So:
+
+- "Alle Modelle" and the percentage may run a bit *behind* claude.ai's
+  dashboard.
+- "Nur Sonnet" / "Nur Opus" reflect *only* what you used through Claude
+  Code locally. If you start a Sonnet conversation in the web app, the
+  widget keeps showing 0 % Sonnet.
+
+The exact, authoritative numbers always live at
+[claude.ai/usage](https://claude.ai/usage). The widget aims to be a
+fast at-a-glance approximation for the Claude-Code-first workflow.
 
 ### Update
 
@@ -87,23 +113,38 @@ osascript -e 'tell application "System Events" to delete login item "Claude Toke
 
 ## Usage
 
-**Menu-bar item:**
+**Menu-bar item (`✦ 17%`):**
 - Left-click → detail popover.
-- Right-click → status menu (toggle widget, snap, change size, quit).
-- Hover → quick session/today/week tooltip.
+- Right-click → status menu (toggle widget, snap, size, **plan**, quit).
+- Hover → tooltip with session % and the three weekly rows at a glance.
+
+**Plan submenu (right-click → Plan):**
+- *Pro* / *Max 5×* / *Max 20×* — sets the token caps used for the
+  percentage display. Default is **Max 5×**.
+- *Prozent-Anzeige aus* — falls back to raw token counts everywhere.
 
 **Desktop widget:**
+- Three sizes via right-click → Größe (klein / mittel / groß).
 - Click-and-drag the dark surface to reposition. Position persists.
 - Right-click on the widget → same context menu as the status item.
 - Appears on every Space, never steals focus, sits on the desktop layer
   (above wallpaper, below app windows).
 
-## Pricing model
+## Plan calibration
 
-Cost numbers are API-equivalent estimates (Opus / Sonnet / Haiku 4.x). If
-you're on Pro or Max you pay your flat subscription — the dollar number is
-just "this is what it would cost on metered API pricing." Tariffs live in
-[`Sources/Pricing.swift`](Sources/Pricing.swift) and are easy to update.
+Anthropic doesn't publish hard token caps for the Pro / Max tiers, so the
+percentage shown is an *approximation*. The defaults were calibrated
+against Max-5× dashboard samples (May 2026):
+
+|              | session (5h)   | week — all models | week — Sonnet     | week — Opus   |
+|--------------|---------------:|-------------------:|-------------------:|---------------:|
+| Pro          | 66 M           | 400 M              | 1 Mrd              | 100 M         |
+| **Max 5×** *(default)* | 330 M     | 2 Mrd              | 5 Mrd              | 500 M         |
+| Max 20×      | 1.32 Mrd       | 8 Mrd              | 20 Mrd             | 2 Mrd         |
+
+These caps live in [`Sources/Models.swift`](Sources/Models.swift) — easy
+to tweak if Anthropic changes the math. **The exact, authoritative
+numbers are always at [claude.ai/usage](https://claude.ai/usage).**
 
 ## Security
 

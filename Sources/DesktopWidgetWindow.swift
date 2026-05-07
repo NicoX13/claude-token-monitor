@@ -243,7 +243,31 @@ private struct DesktopWidgetView: View {
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        ZStack {
+        // Geometry scales the rounded shell to the widget footprint.
+        // Apple's own widgets use bigger corner radii on larger sizes;
+        // we follow the same proportions (~7–8 % of the smaller side).
+        let cornerRadius: CGFloat = {
+            switch size {
+            case .small:  return 22
+            case .medium: return 24
+            case .large:  return 28
+            }
+        }()
+        let outerPadding: CGFloat = {
+            switch size {
+            case .small:  return 6
+            case .medium: return 8
+            case .large:  return 10
+            }
+        }()
+        let shadowRadius: CGFloat = {
+            switch size {
+            case .small:  return 14
+            case .medium: return 18
+            case .large:  return 24
+            }
+        }()
+        return ZStack {
             if let r = model.report {
                 let entry = makeEntry(from: r)
                 switch size {
@@ -264,9 +288,10 @@ private struct DesktopWidgetView: View {
                 endPoint: .bottomTrailing
             )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: Color.black.opacity(0.35), radius: 16, x: 0, y: 8)
-        .padding(6)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .shadow(color: Color.black.opacity(0.4),
+                radius: shadowRadius, x: 0, y: shadowRadius * 0.4)
+        .padding(outerPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onReceive(timer) { tick = $0 }
     }
@@ -628,23 +653,29 @@ private struct WidgetLarge: View {
 
             // Wöchentliche Limits (Anthropic-Layout)
             VStack(alignment: .leading, spacing: 10) {
-                Text(verbatim: "Wöchentliche Limits")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.85))
+                HStack(alignment: .firstTextBaseline) {
+                    Text(verbatim: "Wöchentliche Limits")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.85))
+                    Spacer()
+                    Text(verbatim: "nur Claude Code")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.white.opacity(0.45))
+                }
                 largeWeeklyRow(label: "Alle Modelle",
                                pct: entry.percent(entry.weekTokens, of: entry.weeklyAllLimit),
                                fallbackText: nil)
                 largeWeeklyRow(label: "Nur Sonnet",
                                pct: entry.percent(entry.weekSonnetTokens, of: entry.weeklySonnetLimit),
-                               fallbackText: entry.weekSonnetTokens == 0 ? "Sonnet diese Woche nicht genutzt" : nil)
+                               fallbackText: entry.weekSonnetTokens == 0 ? "via Claude Code noch nicht genutzt" : nil)
                 largeWeeklyRow(label: "Nur Opus",
                                pct: entry.percent(entry.weekOpusTokens, of: entry.weeklyOpusLimit),
-                               fallbackText: entry.weekOpusTokens == 0 ? "Opus diese Woche nicht genutzt" : nil)
+                               fallbackText: entry.weekOpusTokens == 0 ? "via Claude Code noch nicht genutzt" : nil)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     /// Always renders the "Zurücksetzung Mo., 06:00" subtitle when there's

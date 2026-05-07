@@ -152,8 +152,14 @@ struct PopoverView: View {
     @ViewBuilder
     private func weeklyLimitsSection(_ r: UsageReport) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(verbatim: "Wöchentliche Limits")
-                .font(.subheadline.weight(.semibold))
+            HStack(alignment: .firstTextBaseline) {
+                Text(verbatim: "Wöchentliche Limits")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(verbatim: "nur Claude Code")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
 
             limitRow(label: "Alle Modelle",
                      bucket: r.week,
@@ -166,14 +172,19 @@ struct PopoverView: View {
                      limit: r.weeklySonnetLimit,
                      resetAt: r.weekResetAt,
                      emptyText: r.weekSonnet.messageCount == 0
-                        ? "Sonnet diese Woche nicht genutzt" : nil)
+                        ? "via Claude Code noch nicht genutzt" : nil)
 
             limitRow(label: "Nur Opus",
                      bucket: r.weekOpus,
                      limit: r.weeklyOpusLimit,
                      resetAt: r.weekResetAt,
                      emptyText: r.weekOpus.messageCount == 0
-                        ? "Opus diese Woche nicht genutzt" : nil)
+                        ? "via Claude Code noch nicht genutzt" : nil)
+
+            Text(verbatim: "Web-/Desktop-Nutzung von Claude wird nicht erfasst — exakte Werte unter claude.ai/usage.")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

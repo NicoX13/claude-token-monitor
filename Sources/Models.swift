@@ -123,12 +123,14 @@ enum SessionPlan: String, CaseIterable {
     }
 
     /// Weekly "all models" cap — total tokens used between Mon 06:00 resets.
-    /// Calibrated against a Max 5× sample showing 6 % at ~100 M tokens.
+    /// Re-calibrated against a Max 5× sample showing 7 % at ~152 M tokens
+    /// (May 2026): 152 M / 0.07 ≈ 2.17 Mrd → rounded to 2.0 Mrd as the
+    /// tier baseline.
     var weeklyAllLimit: Int? {
         switch self {
-        case .pro:    return    340_000_000
-        case .max5x:  return  1_700_000_000
-        case .max20x: return  6_800_000_000
+        case .pro:    return    400_000_000
+        case .max5x:  return  2_000_000_000
+        case .max20x: return  8_000_000_000
         case .hidden: return nil
         }
     }
