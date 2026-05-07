@@ -81,7 +81,36 @@ indistinguishable from one.
 
 ## Install
 
-### Recommended
+You have two paths: download a pre-built `.app` from the latest release
+(fastest, no toolchain needed), or build from source (gives you the audited
+code in your hands).
+
+### Option A — Pre-built release (recommended)
+
+1. Open the latest release page:
+   **https://github.com/NicoX13/claude-token-monitor/releases/latest**
+2. Download `ClaudeTokenMonitor.zip`.
+3. Double-click the zip → drag **Claude Token Monitor.app** into your
+   `/Applications` folder.
+4. Right-click the app → **Open** → confirm in the Gatekeeper dialog.
+   (You only need to do this the very first time, because the app is
+   ad-hoc signed — see the [Gatekeeper note](#gatekeeper-on-first-launch)
+   below.)
+5. Look at the top-right of your menu bar. You'll see the `✦` icon with
+   your live token count. Right-click it for widget controls.
+
+That's it. The app reads your local Claude Code logs at `~/.claude/projects/`
+— there's nothing to configure.
+
+### Option B — Build from source
+
+You need the **Command Line Tools for Xcode** (no full Xcode required):
+
+```bash
+xcode-select --install
+```
+
+Then:
 
 ```bash
 git clone https://github.com/NicoX13/claude-token-monitor.git
@@ -89,26 +118,74 @@ cd claude-token-monitor
 ./install.sh
 ```
 
-The script:
-1. Builds the app if necessary.
+`install.sh` does four things:
+1. Builds `Claude Token Monitor.app` from source (~5 seconds via `swiftc`).
 2. Copies it to `/Applications/Claude Token Monitor.app`.
 3. Launches it.
-4. Asks whether to register a Login Item so it starts automatically.
+4. Asks whether to register a Login Item so it starts automatically every
+   time you log in (you can also do this later in *System Settings → General
+   → Login Items*).
 
-### Manual
+If you only want to build and try it without installing system-wide:
 
 ```bash
 ./build.sh
 open ".build/Claude Token Monitor.app"
 ```
 
-### First-launch Gatekeeper warning
+### Where do the numbers come from?
 
-The app is **ad-hoc signed** (we don't have an Apple Developer ID). On first
-launch macOS will warn that it's "from an unidentified developer". Either:
+The app does **not** call any API — it reads your own Claude Code session
+logs directly from your home folder:
 
-- Right-click → **Open** → confirm in the dialog, or
-- *System Settings → Privacy & Security → Allow anyway*.
+```
+~/.claude/projects/<project-name>/<session-uuid>.jsonl
+```
+
+Every assistant response that Claude Code logs there contains a `usage`
+object with `input_tokens`, `output_tokens`, `cache_creation_input_tokens`
+and `cache_read_input_tokens`. The app deduplicates via `message.id`,
+buckets the data into session / today / week / month / all-time, and
+displays it. **Nothing leaves your machine.**
+
+If the popover shows zero tokens: that just means you haven't used Claude
+Code yet on this Mac, or `~/.claude/projects` is empty. Fire one Claude
+Code prompt and the next 30-second refresh tick will pick it up.
+
+### Gatekeeper on first launch
+
+The app is **ad-hoc signed** — no Apple Developer ID, no notarisation.
+Apple's Gatekeeper will warn the first time you launch it that it's "from
+an unidentified developer". Two options:
+
+- Right-click the app icon → **Open** → confirm in the dialog, or
+- *System Settings → Privacy & Security* → **Allow anyway** for
+  Claude Token Monitor.
+
+After this one-time confirmation, future launches happen silently.
+
+### Updating
+
+```bash
+cd claude-token-monitor
+git pull
+./install.sh
+```
+
+Or just download the newest `ClaudeTokenMonitor.zip` from the releases page
+and replace the app in `/Applications`.
+
+### Uninstall
+
+```bash
+pkill -x ClaudeTokenMonitor
+rm -rf "/Applications/Claude Token Monitor.app"
+defaults delete local.claudetokenmonitor 2>/dev/null
+osascript -e 'tell application "System Events" to delete login item "Claude Token Monitor"' 2>/dev/null
+```
+
+The app keeps no other state on disk — no caches, no databases, no
+network preferences.
 
 ## Usage
 
@@ -283,8 +360,10 @@ See [open issues](https://github.com/NicoX13/claude-token-monitor/issues) and
 
 ## About the author
 
-Built and maintained by **Nico Felix** — [@NicoX13](https://github.com/NicoX13)
-on GitHub.
+Built and maintained by **Nico Felix** —
+[@NicoX13 on GitHub](https://github.com/NicoX13).
+
+📬 **Contact:** [info@x-fingers.com](mailto:info@x-fingers.com)
 
 If this project saves you time, the kindest things you can do are:
 - ⭐ Star the repo so others find it
@@ -292,9 +371,14 @@ If this project saves you time, the kindest things you can do are:
 - 🐛 Open an issue if something breaks
 - 🔧 Send a PR if you have a fix or improvement (see [CONTRIBUTING](CONTRIBUTING.md))
 
-For security disclosures, please use
-[GitHub Security Advisories](https://github.com/NicoX13/claude-token-monitor/security/advisories/new)
-rather than a public issue.
+### When to use which channel
+
+| Situation | Channel |
+|---|---|
+| 🐛 Bug or regression | [Open an issue](https://github.com/NicoX13/claude-token-monitor/issues/new/choose) |
+| 💡 Feature idea | [Open an issue](https://github.com/NicoX13/claude-token-monitor/issues/new/choose) |
+| 🔒 Security finding | [GitHub Security Advisories](https://github.com/NicoX13/claude-token-monitor/security/advisories/new) — *please not a public issue* |
+| 📨 Anything else (collaboration, hire, press, questions) | [info@x-fingers.com](mailto:info@x-fingers.com) |
 
 ## License
 

@@ -57,11 +57,19 @@ swiftc -O -framework Foundation /tmp/ctm-cli/*.swift -o /tmp/ctm-cli/cli
 ## Security
 
 If you find a security issue, please **don't** open a public issue. Use
-[GitHub Security Advisories](https://github.com/NicoX13/claude-token-monitor/security/advisories/new)
-instead.
+either of:
+
+- [GitHub Security Advisories](https://github.com/NicoX13/claude-token-monitor/security/advisories/new) (preferred)
+- Email: [info@x-fingers.com](mailto:info@x-fingers.com) — subject line:
+  *"claude-token-monitor security"*
 
 The project's threat model and hardening invariants are documented in
 [SECURITY.md](SECURITY.md). New parser code must preserve those invariants.
+
+## Other contact
+
+For non-issue questions — collaboration, hire, press — reach me at
+[info@x-fingers.com](mailto:info@x-fingers.com).
 
 ## Releasing
 

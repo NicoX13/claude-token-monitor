@@ -1,3 +1,26 @@
+# Security
+
+## Reporting a vulnerability
+
+Please **do not** open a public GitHub issue for security-related findings.
+Use one of the following channels instead:
+
+1. **Preferred — GitHub Security Advisories (private):**
+   https://github.com/NicoX13/claude-token-monitor/security/advisories/new
+2. **Email:** `info@x-fingers.com` — please include "claude-token-monitor security" in the subject so it gets routed correctly.
+
+You will get a response within a few days. We commit to crediting reporters in
+the release notes (unless you prefer to stay anonymous).
+
+## Supported versions
+
+| Version  | Supported          |
+|----------|--------------------|
+| 1.x      | ✅ active          |
+| < 1.0    | —                  |
+
+---
+
 # Security Audit — Claude Token Monitor
 
 Audit-Datum: 2026-05-07

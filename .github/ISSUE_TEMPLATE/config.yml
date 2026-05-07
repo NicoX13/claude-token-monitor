@@ -3,3 +3,6 @@ contact_links:
   - name: Security report
     url: https://github.com/NicoX13/claude-token-monitor/security/advisories/new
     about: Please report security issues privately via GitHub Security Advisories.
+  - name: General contact (collaboration / hire / press)
+    url: mailto:info@x-fingers.com
+    about: Anything that isn't a bug or feature request.
