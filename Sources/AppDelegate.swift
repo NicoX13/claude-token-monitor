@@ -6,10 +6,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var refreshTimer: Timer?
+    private var fsWatcher: DispatchSourceFileSystemObject?
+    private var watcherFD: Int32 = -1
     private let reader = UsageReader()
     private let viewModel = UsageViewModel()
     private var desktopWidget: DesktopWidgetWindow?
     private let desktopWidgetEnabledKey = "DesktopWidgetEnabled"
+    /// Coalesce multiple FS events into one refresh so a burst of writes
+    /// doesn't queue dozens of redundant parses.
+    private var fsRefreshScheduled = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hide from Dock — we live in the menu bar only.
@@ -44,8 +49,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         refresh()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30,
-                                            repeats: true) { [weak self] _ in
+        startRefreshTimer()
+        startFileSystemWatcher()
+        registerSystemNotifications()
+    }
+
+    // MARK: - Refresh strategy
+    //
+    // Three layers, designed so the popover and widget never go stale:
+    //   1. Fast polling (5 s) on RunLoop.main in .common mode so it keeps
+    //      firing while menus are open, during modal sheets, etc.
+    //   2. FSEvents-style watcher on ~/.claude/projects: when Claude Code
+    //      appends a JSONL line, we refresh within ~1 s instead of waiting
+    //      for the next poll tick.
+    //   3. Wake / activate notifications: macOS aggressively pauses timers
+    //      when the machine sleeps; we re-poll immediately on wake or when
+    //      the user brings our app forward.
+
+    private func startRefreshTimer() {
+        let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
+            self?.refresh()
+        }
+        // .common = fires during menu tracking, modal sessions, scroll-event
+        // loops — the situations where .default would silently pause.
+        RunLoop.main.add(timer, forMode: .common)
+        refreshTimer = timer
+    }
+
+    private func startFileSystemWatcher() {
+        let projectsDir = FileManager.default
+            .homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects")
+        let fd = open(projectsDir.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        watcherFD = fd
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .rename, .delete],
+            queue: .global(qos: .utility)
+        )
+        source.setEventHandler { [weak self] in
+            self?.scheduleCoalescedRefresh()
+        }
+        source.setCancelHandler { [weak self] in
+            if let fd = self?.watcherFD, fd >= 0 { close(fd) }
+            self?.watcherFD = -1
+        }
+        source.resume()
+        fsWatcher = source
+    }
+
+    /// Many file events can arrive in <1 s while a JSONL is being written.
+    /// Coalesce them into a single refresh to avoid pile-up.
+    private func scheduleCoalescedRefresh() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.fsRefreshScheduled else { return }
+            self.fsRefreshScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.fsRefreshScheduled = false
+                self?.refresh()
+            }
+        }
+    }
+
+    private func registerSystemNotifications() {
+        let wsCenter = NSWorkspace.shared.notificationCenter
+        wsCenter.addObserver(forName: NSWorkspace.didWakeNotification,
+                             object: nil, queue: .main) { [weak self] _ in
+            self?.refresh()
+        }
+        wsCenter.addObserver(forName: NSWorkspace.screensDidWakeNotification,
+                             object: nil, queue: .main) { [weak self] _ in
+            self?.refresh()
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
             self?.refresh()
         }
     }
