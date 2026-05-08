@@ -30,6 +30,13 @@ final class UsageReader {
         return aggregate(entries: entries, now: now)
     }
 
+    /// Drop every cached file entry so the next `generateReport` re-reads
+    /// every JSONL from disk. Called by the "Jetzt aktualisieren" menu
+    /// item as a heavy-handed safety net.
+    func invalidateCache() {
+        fileCache.removeAll(keepingCapacity: true)
+    }
+
     // MARK: - Loading
 
     private func loadAllEntries() -> [(UsageEntry, Int, Int)] {

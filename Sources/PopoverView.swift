@@ -259,14 +259,19 @@ struct PopoverView: View {
 
     @ViewBuilder
     private func footer(_ r: UsageReport) -> some View {
-        HStack {
+        HStack(spacing: 6) {
             if let last = r.lastMessageAt {
-                Text("Letzte Aktivität \(Formatter.relativeTime(last, now: tick))")
+                Text(verbatim: "Letzte Aktivität \(Formatter.relativeTime(last, now: tick))")
             } else {
-                Text("Noch keine Aktivität")
+                Text(verbatim: "Noch keine Aktivität")
             }
             Spacer()
-            Text("\(r.totalEntries) Messages")
+            // The refreshed-at indicator makes a frozen pipeline obvious:
+            // if it ever shows "vor 5 min" or worse, the user knows
+            // something is wrong and can hit "Jetzt aktualisieren".
+            if let lastRefresh = model.lastRefreshAt {
+                Text(verbatim: "· aktualisiert \(Formatter.relativeTime(lastRefresh, now: tick))")
+            }
         }
         .font(.caption2)
         .foregroundColor(.secondary)

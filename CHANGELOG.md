@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-05-08
+
+### Fixed — the big one
+- **Frozen-state bug after long sleeps.** A user reported the widget
+  showing yesterday-evening's numbers despite Claude Code actively
+  writing to JSONL all morning. Diagnosis (via `lsof -p <pid>`):
+  the `DispatchSource` file-system watcher had been silently torn
+  down — most likely during overnight sleep — and the polling Timer
+  was paused alongside it under macOS App Nap. With both layers
+  dead, the in-memory `UsageReport` never got refreshed and the
+  app rendered a snapshot from ~16 hours earlier.
+
+  Three fixes layered together:
+
+  1. **Opt out of App Nap** via
+     `ProcessInfo.beginActivity(options: .userInitiated)` held for
+     the lifetime of the app delegate. Background apps with no Dock
+     icon are first in line for App Nap throttling; this assertion
+     keeps timers and dispatch sources running while the system is
+     awake. We deliberately do NOT pass `.idleSystemSleepDisabled`,
+     so the Mac itself can still sleep normally.
+  2. **Re-arm the watcher and timer on every wake.** The
+     `NSWorkspace.didWakeNotification` handler now calls
+     `restartFileSystemWatcher()` and `restartRefreshTimer()`
+     before refreshing — the previous build only called `refresh()`,
+     which silently noop'd when the underlying timer/source had been
+     killed. The cancel handler closes the file descriptor; the next
+     `startFileSystemWatcher()` opens a fresh one.
+  3. **`NSCalendarDayChanged` and `NSSystemClockDidChange`
+     observers** so day-rollover and timezone/NTP corrections
+     automatically slide the "Today" / "this week" buckets.
+
+### Added
+- **"Jetzt aktualisieren" menu item** (right-click → status menu).
+  Performs a heavy-handed reset: drops every cached JSONL parse
+  result, tears down and rebuilds the file watcher and the timer,
+  then refreshes. Useful as a manual override if you ever suspect
+  the data is stale.
+- **"Bei Login starten" toggle** in the right-click menu, backed by
+  the modern `SMAppService.mainApp` API (macOS 13+). Reflects
+  current state with a checkmark; toggling immediately registers /
+  unregisters the app as a Login Item — no more depending on the
+  install.sh "j/N" prompt being answered correctly at install time.
+- **"Aktualisiert vor X s" indicator** in the popover footer.
+  Driven by a new `lastRefreshAt` field on the view model that
+  updates on every successful refresh. If the value ever shows
+  "vor 5 min" or worse, the user has an immediate visual cue that
+  the pipeline is stuck — and a one-click way to fix it via
+  "Jetzt aktualisieren".
+
+### Changed
+- Default plan in the right-click menu corrected to **Max 5×**
+  (was Max 20× in the menu, even though the reader already
+  defaulted to Max 5× — this resolves the inconsistency).
+- Popover height bumped 520 → 540 pt to accommodate the new
+  refresh indicator without crowding the weekly limits.
+
 ## [1.5.0] — 2026-05-07
 
 ### Added

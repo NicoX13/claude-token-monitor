@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
@@ -15,10 +16,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Coalesce multiple FS events into one refresh so a burst of writes
     /// doesn't queue dozens of redundant parses.
     private var fsRefreshScheduled = false
+    /// Activity assertion that opts this background app out of macOS App Nap.
+    /// Without it, after a few minutes of background-only activity macOS
+    /// suspends our process — timers stop, DispatchSource sources die, and
+    /// the popover/widget freeze on whatever they last rendered. The user
+    /// then sees yesterday's numbers today. Holding this token keeps us
+    /// alive at "userInitiated" QoS without preventing system sleep.
+    private var activityToken: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hide from Dock — we live in the menu bar only.
         NSApp.setActivationPolicy(.accessory)
+
+        // Opt out of App Nap. .userInitiated keeps timers and dispatch
+        // sources alive while the system is awake; we do NOT pass
+        // .idleSystemSleepDisabled so the Mac can still sleep normally.
+        activityToken = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated],
+            reason: "Live token usage tracking from ~/.claude/projects"
+        )
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
@@ -34,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 360, height: 520)
+        popover.contentSize = NSSize(width: 360, height: 540)
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
             rootView: PopoverView(model: viewModel)
@@ -116,20 +132,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Tear down the FS watcher and start a fresh one. The DispatchSource
+    /// file-descriptor can become stale across long sleeps or after the
+    /// directory is moved, and a "dead" watcher is silent — no events,
+    /// no errors, no logs. Re-arming on every wake makes the failure
+    /// mode self-healing.
+    private func restartFileSystemWatcher() {
+        fsWatcher?.cancel()
+        fsWatcher = nil
+        // The cancel handler closes the fd, but on the off chance it
+        // didn't run (cancellation race), close it here too.
+        if watcherFD >= 0 {
+            close(watcherFD)
+            watcherFD = -1
+        }
+        startFileSystemWatcher()
+    }
+
+    /// Tear down the polling Timer and start a fresh one. Same rationale
+    /// as the FS watcher — Timer can become orphaned across sleep.
+    private func restartRefreshTimer() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        startRefreshTimer()
+    }
+
     private func registerSystemNotifications() {
         let wsCenter = NSWorkspace.shared.notificationCenter
+
+        // Wake events: rebuild both watcher and timer, then refresh.
+        // Both layers can silently die during long sleeps; rebuilding
+        // is cheap and guarantees the refresh pipeline is alive.
+        let onWake: (Notification) -> Void = { [weak self] _ in
+            guard let self else { return }
+            self.restartFileSystemWatcher()
+            self.restartRefreshTimer()
+            self.refresh()
+        }
         wsCenter.addObserver(forName: NSWorkspace.didWakeNotification,
-                             object: nil, queue: .main) { [weak self] _ in
-            self?.refresh()
-        }
+                             object: nil, queue: .main, using: onWake)
         wsCenter.addObserver(forName: NSWorkspace.screensDidWakeNotification,
-                             object: nil, queue: .main) { [weak self] _ in
-            self?.refresh()
-        }
+                             object: nil, queue: .main, using: onWake)
+
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
+            self?.refresh()
+        }
+
+        // Significant time-change notifications: when the user's clock
+        // jumps (timezone change, NTP sync after long offline period,
+        // crossing midnight while we slept), aggregation buckets need
+        // to be recomputed against the new "now".
+        NotificationCenter.default.addObserver(
+            forName: .NSSystemClockDidChange,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.refresh()
+        }
+        NotificationCenter.default.addObserver(
+            forName: .NSCalendarDayChanged,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            // Day rollover: "Today" / "this week" buckets need to slide.
             self?.refresh()
         }
     }
@@ -201,7 +267,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let planItem = NSMenuItem(title: "Plan", action: nil, keyEquivalent: "")
         let planMenu = NSMenu()
         let currentPlan = SessionPlan(rawValue: UserDefaults.standard.string(forKey: "SessionPlan")
-                                      ?? SessionPlan.max20x.rawValue) ?? .max20x
+                                      ?? SessionPlan.max5x.rawValue) ?? .max5x
         for plan in SessionPlan.allCases {
             let it = NSMenuItem(title: plan.displayName,
                                 action: #selector(setPlan(_:)),
@@ -215,6 +281,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(planItem)
 
         menu.addItem(NSMenuItem.separator())
+
+        // Manual refresh — gives users an explicit way to force a fresh
+        // read if they ever suspect the data is stale (e.g. after a
+        // long sleep). The wake notifications + watcher rebuild make
+        // this rare, but it's a useful safety net.
+        let refreshItem = NSMenuItem(title: "Jetzt aktualisieren",
+                                     action: #selector(forceRefresh),
+                                     keyEquivalent: "r")
+        refreshItem.target = self
+        menu.addItem(refreshItem)
+
+        // Login Item toggle — uses SMAppService.mainApp (macOS 13+) so
+        // we don't depend on the install.sh "j/N" prompt being answered
+        // at install time. Reflects current state.
+        let loginItem = NSMenuItem(title: "Bei Login starten",
+                                   action: #selector(toggleLoginItem),
+                                   keyEquivalent: "")
+        loginItem.state = isLoginItemEnabled() ? .on : .off
+        loginItem.target = self
+        menu.addItem(loginItem)
+
         let details = NSMenuItem(title: "Details öffnen", action: #selector(togglePopoverFromMenu),
                                  keyEquivalent: "")
         details.target = self
@@ -228,6 +315,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
+    }
+
+    @objc private func forceRefresh() {
+        // Heavy hand: rebuild every layer, drop file caches, refresh.
+        reader.invalidateCache()
+        restartFileSystemWatcher()
+        restartRefreshTimer()
+        refresh()
+    }
+
+    @objc private func toggleLoginItem() {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            // Surface failures as a non-blocking alert so the user
+            // knows it didn't take effect (e.g. ad-hoc-signed bundles
+            // can fail under stricter system policies).
+            let alert = NSAlert()
+            alert.messageText = "Login-Item-Status konnte nicht geändert werden"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+    }
+
+    private func isLoginItemEnabled() -> Bool {
+        return SMAppService.mainApp.status == .enabled
     }
 
     @objc private func toggleDesktopWidget() {
@@ -294,6 +412,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let report = self.reader.generateReport()
             DispatchQueue.main.async {
                 self.viewModel.report = report
+                self.viewModel.lastRefreshAt = Date()
                 self.updateStatusBar(report)
             }
         }
@@ -415,4 +534,8 @@ enum Formatter {
 
 final class UsageViewModel: ObservableObject {
     @Published var report: UsageReport?
+    /// Wall-clock time of the most recent successful refresh. The popover
+    /// surfaces this as "Aktualisiert vor X s" so users can spot a frozen
+    /// pipeline immediately.
+    @Published var lastRefreshAt: Date?
 }

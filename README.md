@@ -115,7 +115,9 @@ osascript -e 'tell application "System Events" to delete login item "Claude Toke
 
 **Menu-bar item (`✦ 17%`):**
 - Left-click → detail popover.
-- Right-click → status menu (toggle widget, snap, size, **plan**, quit).
+- Right-click → status menu:
+  *Widget toggle*, *snap*, *size*, **plan**, **Jetzt aktualisieren**,
+  **Bei Login starten**, *Details*, *Beenden*.
 - Hover → tooltip with session % and the three weekly rows at a glance.
 
 **Plan submenu (right-click → Plan):**
@@ -123,12 +125,34 @@ osascript -e 'tell application "System Events" to delete login item "Claude Toke
   percentage display. Default is **Max 5×**.
 - *Prozent-Anzeige aus* — falls back to raw token counts everywhere.
 
+**"Jetzt aktualisieren":** force-refresh that drops every cached parse
+result, rebuilds the file-system watcher, restarts the polling timer,
+and re-reads JSONL from disk. Useful if you ever suspect numbers are
+stale. The popover footer shows "Aktualisiert vor X s" so you can spot
+a stuck pipeline at a glance.
+
+**"Bei Login starten":** toggle that registers the app as a Login Item
+via `SMAppService` (no installer needed). Persists across reboots.
+
 **Desktop widget:**
 - Three sizes via right-click → Größe (klein / mittel / groß).
 - Click-and-drag the dark surface to reposition. Position persists.
 - Right-click on the widget → same context menu as the status item.
 - Appears on every Space, never steals focus, sits on the desktop layer
   (above wallpaper, below app windows).
+
+## Resilience — sleep / wake / restart / Claude closed
+
+The app is engineered to survive every common interruption:
+
+| Event | Behaviour |
+|---|---|
+| **Mac sleeps and wakes** (overnight, lid close) | On `NSWorkspace.didWakeNotification` the file-system watcher AND the polling timer are torn down and rebuilt, then `refresh()` runs. Long-sleep stale state cannot persist. |
+| **Mac restarts** | If the Login Item toggle is on, the app launches automatically at the next login and resumes monitoring. Toggle is in the right-click menu. |
+| **Claude Code closed** | The widget keeps showing the most recent state (no new JSONL writes = nothing to update). When Claude Code starts again, the file-system watcher fires within ~1 s of the next assistant response. |
+| **Day rollover (00:00)** | `NSCalendarDayChanged` and `NSSystemClockDidChange` observers trigger an immediate refresh so "Today" / "this week" buckets slide correctly. |
+| **App Nap** | Disabled at launch with `ProcessInfo.beginActivity(.userInitiated)`. macOS will not throttle this background-only app while you're using your Mac. |
+| **Watcher dies silently** | "Jetzt aktualisieren" in the right-click menu is a heavy-handed manual rebuild that forces every layer to be reconstructed from scratch. The popover's "Aktualisiert vor X s" footer surfaces the issue. |
 
 ## Plan calibration
 
