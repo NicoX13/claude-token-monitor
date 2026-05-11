@@ -28,11 +28,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Hide from Dock — we live in the menu bar only.
         NSApp.setActivationPolicy(.accessory)
 
-        // Opt out of App Nap. .userInitiated keeps timers and dispatch
-        // sources alive while the system is awake; we do NOT pass
-        // .idleSystemSleepDisabled so the Mac can still sleep normally.
+        // Opt out of App Nap WITHOUT preventing system sleep.
+        //
+        // 1.6.0 mistakenly used `.userInitiated`, which is a composed option
+        // set that includes `.idleSystemSleepDisabled` — that registered a
+        // PreventUserIdleSystemSleep assertion in pmset and stopped the Mac
+        // from going to sleep on idle. Confirmed via `pmset -g assertions`.
+        // `.userInitiatedAllowingIdleSystemSleep` is the exact same set
+        // minus the idle-sleep flag: app stays alive (timers + dispatch
+        // sources keep running while awake), but the Mac can go to sleep
+        // normally when the user is away.
         activityToken = ProcessInfo.processInfo.beginActivity(
-            options: [.userInitiated],
+            options: [.userInitiatedAllowingIdleSystemSleep],
             reason: "Live token usage tracking from ~/.claude/projects"
         )
 
@@ -82,13 +89,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     //      when the machine sleeps; we re-poll immediately on wake or when
     //      the user brings our app forward.
 
+    private var pollTickCount: Int = 0
+
     private func startRefreshTimer() {
-        // 60 s is the safety-net poll. The FS watcher below already gives
-        // sub-second updates whenever Claude Code writes to a JSONL file,
-        // so we only need polling as a fallback for cases where the
-        // watcher might miss something (network mounts, sleep/wake races).
-        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
-            self?.refresh()
+        // 30 s safety-net poll. The FS watcher gives sub-second updates
+        // whenever Claude Code writes to a JSONL, so the polling timer is
+        // mostly insurance for cases where the watcher misses something
+        // (network mounts, sleep/wake races, fd that died silently).
+        //
+        // Every 5th tick (~150 s) we ALSO tear down and rebuild the FS
+        // watcher. DispatchSource sources can become "dead" without ever
+        // notifying us — no errors, no events — and a periodic rebuild
+        // self-heals that failure mode without needing a wake notification.
+        pollTickCount = 0
+        let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.pollTickCount += 1
+            self.refresh()
+            if self.pollTickCount % 5 == 0 {
+                self.restartFileSystemWatcher()
+            }
         }
         // .common = fires during menu tracking, modal sessions, scroll-event
         // loops — the situations where .default would silently pause.

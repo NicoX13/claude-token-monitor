@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] — 2026-05-11
+
+### Fixed — important
+- **The Mac couldn't go to idle sleep while this app was running.**
+  Verified with `pmset -g assertions`:
+  ```
+  pid 1129(ClaudeTokenMonitor):
+      PreventUserIdleSystemSleep
+      named: "Live token usage tracking from ~/.claude/projects"
+  ```
+  Cause: 1.6.0 used `ProcessInfo.processInfo.beginActivity(.userInitiated)`
+  to opt out of App Nap, but `.userInitiated` is a *composed* option set
+  that also includes `.idleSystemSleepDisabled`. So while we got the
+  App Nap fix right, we accidentally registered a system-wide
+  "keep the Mac awake" assertion. After running for hours, users
+  noticed their Mac never going to sleep.
+
+  Fix: switch to `.userInitiatedAllowingIdleSystemSleep`, which is
+  identical to `.userInitiated` minus the idle-sleep flag.
+  Confirmed clean: `pmset -g assertions` now shows nothing for
+  ClaudeTokenMonitor while the app still bypasses App Nap.
+
+### Added — defensive measures against silent watcher death
+- **Periodic watcher rebuild** (~every 2.5 minutes). `DispatchSource`
+  file-system sources occasionally become "dead" without ever
+  notifying us — no errors, no events. Wake-on-sleep already
+  rearms them, but watchers can die between wake events too.
+  Polling cadence stays at 30 s; every 5th tick we tear down and
+  re-create the FS source as a defensive safety net.
+- **Polling cadence tightened** from 60 s → 30 s. The FS watcher
+  still does the heavy lifting (sub-second updates on writes),
+  but a tighter poll narrows the worst-case staleness window when
+  the watcher dies between rebuild ticks.
+
 ## [1.6.0] — 2026-05-08
 
 ### Fixed — the big one
