@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] — 2026-05-13
+
+### Fixed — the actual root cause of the "stuck after sleep" reports
+
+After several rounds of patches that didn't truly fix the problem,
+finally identified two structural bugs in the refresh pipeline.
+**Both shipped from day one.**
+
+1. **The FS watcher was deaf to Claude Code's writes.**
+   `DispatchSource.makeFileSystemObjectSource(fileDescriptor:)` only
+   fires events for direct children of the watched directory's file
+   descriptor. Claude Code writes to
+   `~/.claude/projects/<project>/<uuid>.jsonl` — one level down — so
+   the watcher's fd stayed open and idle, no events ever delivered.
+   What looked like "the watcher gives sub-second updates" in earlier
+   testing was actually the *polling timer* doing the work; the
+   watcher only ever fired during manual touches in the top-level
+   directory.
+
+   Proven with a manual probe: `touch ~/.claude/projects/probe`
+   triggered an immediate refresh (top-level child → event fires).
+   The same touch one level down was silent.
+
+   **Fix:** replace `DispatchSource(fileDescriptor:)` with
+   `FSEventStream`, which is Apple's higher-level API and watches
+   directories *recursively*. Every `.jsonl` write now reaches us
+   within ~1 s regardless of how deep the path is.
+
+2. **The polling timer didn't survive sleep.**
+   `Timer.scheduledTimer` on `RunLoop.main` is documented to fire
+   on the runloop, but the runloop is in an indeterminate state right
+   after the system resumes from a long sleep — fire dates get
+   dropped and the timer effectively stops. After overnight sleep,
+   the user reported "no updates today", which is exactly that.
+
+   **Fix:** switch to `DispatchSource.makeTimerSource` (GCD-based).
+   GCD timers are managed by libdispatch, not by NSRunLoop, and
+   survive sleep/resume transitions cleanly. Polling cadence stays
+   at 30 s with a 2 s leeway.
+
+Together these two changes mean the refresh pipeline now actually
+works in steady state, instead of relying on wake notifications +
+periodic rebuilds to paper over the dead layers. The rebuild
+hooks (wake / day-change / "Jetzt aktualisieren") stay in place as
+defense in depth, but they shouldn't be hit during normal use.
+
+### Verified
+- FSEvents framework loaded into the running process (`sample` confirms).
+- `pmset -g assertions` clean — no PreventUserIdleSystemSleep entry
+  for ClaudeTokenMonitor (1.6.1's regression-prevention holds).
+- File-system event delivery confirmed via top-level probe; recursive
+  delivery guaranteed by the FSEventStream API contract
+  (`kFSEventStreamCreateFlagFileEvents`).
+
 ## [1.6.1] — 2026-05-11
 
 ### Fixed — important

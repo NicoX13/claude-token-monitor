@@ -143,16 +143,20 @@ via `SMAppService` (no installer needed). Persists across reboots.
 
 ## Resilience — sleep / wake / restart / Claude closed
 
-The app is engineered to survive every common interruption:
+The refresh pipeline is layered so no single failure mode can stall it:
 
-| Event | Behaviour |
+| Layer | What it does |
 |---|---|
-| **Mac sleeps and wakes** (overnight, lid close) | On `NSWorkspace.didWakeNotification` the file-system watcher AND the polling timer are torn down and rebuilt, then `refresh()` runs. Long-sleep stale state cannot persist. |
-| **Mac restarts** | If the Login Item toggle is on, the app launches automatically at the next login and resumes monitoring. Toggle is in the right-click menu. |
-| **Claude Code closed** | The widget keeps showing the most recent state (no new JSONL writes = nothing to update). When Claude Code starts again, the file-system watcher fires within ~1 s of the next assistant response. |
-| **Day rollover (00:00)** | `NSCalendarDayChanged` and `NSSystemClockDidChange` observers trigger an immediate refresh so "Today" / "this week" buckets slide correctly. |
-| **App Nap** | Disabled at launch with `ProcessInfo.beginActivity(.userInitiated)`. macOS will not throttle this background-only app while you're using your Mac. |
-| **Watcher dies silently** | "Jetzt aktualisieren" in the right-click menu is a heavy-handed manual rebuild that forces every layer to be reconstructed from scratch. The popover's "Aktualisiert vor X s" footer surfaces the issue. |
+| **`FSEventStream`** (recursive) on `~/.claude/projects/` | Watches the entire tree, not just direct children. Every `.jsonl` write — including the ones one level down where Claude Code actually appends — reaches us within ~1 s. |
+| **`DispatchSourceTimer`** every 30 s | GCD-based polling, not RunLoop-based. Survives system sleep / resume cleanly where `Timer.scheduledTimer` did not. |
+| **`NSWorkspace.didWakeNotification` + `screensDidWakeNotification`** | Tear down and rebuild *both* the FSEventStream and the timer on every wake, then refresh immediately. Defense against either layer being orphaned during sleep. |
+| **`NSCalendarDayChanged` + `NSSystemClockDidChange`** | Trigger refresh at day rollover (00:00) and after NTP / timezone adjustments so the "Today" / "this week" buckets slide. |
+| **`NSApplication.didBecomeActiveNotification`** | Refresh whenever the user brings the app forward. |
+| **App Nap opt-out** via `ProcessInfo.beginActivity(.userInitiatedAllowingIdleSystemSleep)` | Keeps GCD timers and event streams alive while the Mac is awake. We pass the **`AllowingIdleSystemSleep`** variant so the Mac can still go to sleep when the user is away — earlier builds used plain `.userInitiated`, which mistakenly held a `PreventUserIdleSystemSleep` assertion. |
+| **"Jetzt aktualisieren"** in the right-click menu | Heavy-handed manual rebuild: drops every file cache, tears down + restarts the event stream and the timer, then refreshes. The escape hatch when something unexpected goes wrong. The popover footer's "Aktualisiert vor X s" makes such a stuck pipeline obvious. |
+| **"Bei Login starten"** toggle in the right-click menu | Backed by `SMAppService.mainApp` (macOS 13+). Re-launches the app on every login — survives reboots. |
+
+In short: sleep/wake, restart, day rollover, Claude Code closed and reopened — all handled. If a value ever genuinely looks stale, the popover's "Aktualisiert vor X s" line tells you, and one click on "Jetzt aktualisieren" rebuilds everything from scratch.
 
 ## Plan calibration
 

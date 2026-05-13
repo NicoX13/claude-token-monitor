@@ -6,9 +6,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
-    private var refreshTimer: Timer?
-    private var fsWatcher: DispatchSourceFileSystemObject?
-    private var watcherFD: Int32 = -1
+    /// GCD-based timer — `Timer.scheduledTimer` on RunLoop stops firing
+    /// reliably after sleep, `DispatchSourceTimer` keeps ticking.
+    private var pollTimer: DispatchSourceTimer?
+    /// Recursive directory watcher. The previous implementation used a
+    /// `DispatchSource` on the `~/.claude/projects` directory file
+    /// descriptor, but that only fires for direct children — never for
+    /// Claude Code's actual writes in `<project>/<uuid>.jsonl`
+    /// subdirectories. `FSEventStream` watches the entire subtree.
+    private var eventStream: FSEventStreamRef?
     private let reader = UsageReader()
     private let viewModel = UsageViewModel()
     private var desktopWidget: DesktopWidgetWindow?
@@ -20,8 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Without it, after a few minutes of background-only activity macOS
     /// suspends our process — timers stop, DispatchSource sources die, and
     /// the popover/widget freeze on whatever they last rendered. The user
-    /// then sees yesterday's numbers today. Holding this token keeps us
-    /// alive at "userInitiated" QoS without preventing system sleep.
+    /// then sees yesterday's numbers today. `.userInitiatedAllowingIdleSystemSleep`
+    /// keeps us alive at userInitiated QoS without preventing system sleep.
     private var activityToken: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -79,64 +85,111 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Refresh strategy
     //
-    // Three layers, designed so the popover and widget never go stale:
-    //   1. Fast polling (5 s) on RunLoop.main in .common mode so it keeps
-    //      firing while menus are open, during modal sheets, etc.
-    //   2. FSEvents-style watcher on ~/.claude/projects: when Claude Code
-    //      appends a JSONL line, we refresh within ~1 s instead of waiting
-    //      for the next poll tick.
-    //   3. Wake / activate notifications: macOS aggressively pauses timers
-    //      when the machine sleeps; we re-poll immediately on wake or when
-    //      the user brings our app forward.
+    // Four layers, every one of which has bit us in production:
+    //
+    //   1. **GCD polling timer** (30 s). `DispatchSourceTimer` keeps
+    //      ticking across macOS sleep — `Timer.scheduledTimer` on
+    //      `RunLoop.main` did not.
+    //   2. **FSEventStream** (recursive) on `~/.claude/projects/`.
+    //      Watches every subdirectory, not just direct children — the
+    //      previous `DispatchSource(fileDescriptor:)` setup was deaf to
+    //      Claude Code's writes because they land one level down.
+    //   3. **Wake / screen-wake / clock-change / day-change observers**
+    //      tear down and rebuild *both* the timer and the event stream
+    //      before refreshing. Long sleeps tend to leave both layers
+    //      orphaned even when the process resumes successfully.
+    //   4. **Manual "Jetzt aktualisieren"** in the status menu rebuilds
+    //      everything and drops every file-cache entry — the explicit
+    //      escape hatch when something we didn't anticipate goes wrong.
 
-    private var pollTickCount: Int = 0
+    // MARK: - Polling timer (GCD)
 
     private func startRefreshTimer() {
-        // 30 s safety-net poll. The FS watcher gives sub-second updates
-        // whenever Claude Code writes to a JSONL, so the polling timer is
-        // mostly insurance for cases where the watcher misses something
-        // (network mounts, sleep/wake races, fd that died silently).
-        //
-        // Every 5th tick (~150 s) we ALSO tear down and rebuild the FS
-        // watcher. DispatchSource sources can become "dead" without ever
-        // notifying us — no errors, no events — and a periodic rebuild
-        // self-heals that failure mode without needing a wake notification.
-        pollTickCount = 0
-        let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            self.pollTickCount += 1
-            self.refresh()
-            if self.pollTickCount % 5 == 0 {
-                self.restartFileSystemWatcher()
-            }
+        // GCD-based timer. Earlier builds used `Timer.scheduledTimer` on
+        // `RunLoop.main`, but those stop firing reliably after the system
+        // resumes from a long sleep — the runloop is in a weird state
+        // post-wake and the next fire date can be lost. A
+        // `DispatchSourceTimer` is GCD-managed and survives sleep cleanly.
+        pollTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(
+            queue: DispatchQueue.global(qos: .utility)
+        )
+        timer.schedule(deadline: .now() + 30, repeating: 30, leeway: .seconds(2))
+        timer.setEventHandler { [weak self] in
+            self?.refresh()
         }
-        // .common = fires during menu tracking, modal sessions, scroll-event
-        // loops — the situations where .default would silently pause.
-        RunLoop.main.add(timer, forMode: .common)
-        refreshTimer = timer
+        timer.resume()
+        pollTimer = timer
     }
 
+    private func restartRefreshTimer() { startRefreshTimer() }
+
+    // MARK: - File-system watcher (FSEventStream, recursive)
+
     private func startFileSystemWatcher() {
+        // Earlier builds opened a `DispatchSource` on the projects directory
+        // file descriptor — but DispatchSource only fires for direct
+        // children of that fd's directory, NOT for files in subdirectories.
+        // Claude Code writes to `<project>/<uuid>.jsonl` — one level down —
+        // so the events never reached us. The watcher fd was open but
+        // effectively deaf. `FSEventStream` watches the entire subtree
+        // recursively, which is what we actually need.
+        stopFileSystemWatcher()
         let projectsDir = FileManager.default
             .homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
-        let fd = open(projectsDir.path, O_EVTONLY)
-        guard fd >= 0 else { return }
-        watcherFD = fd
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd,
-            eventMask: [.write, .extend, .rename, .delete],
-            queue: .global(qos: .utility)
+        let paths = [projectsDir.path] as CFArray
+
+        var context = FSEventStreamContext(
+            version: 0,
+            info: Unmanaged.passUnretained(self).toOpaque(),
+            retain: nil,
+            release: nil,
+            copyDescription: nil
         )
-        source.setEventHandler { [weak self] in
-            self?.scheduleCoalescedRefresh()
+        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+            guard let info else { return }
+            let me = Unmanaged<AppDelegate>.fromOpaque(info).takeUnretainedValue()
+            me.scheduleCoalescedRefresh()
         }
-        source.setCancelHandler { [weak self] in
-            if let fd = self?.watcherFD, fd >= 0 { close(fd) }
-            self?.watcherFD = -1
+        // `kFSEventStreamCreateFlagFileEvents` makes us notice individual
+        // file-level changes (writes, renames, deletes) instead of just
+        // directory-level coalesced events. 1.0 s latency = let the OS
+        // batch nearby writes before delivering.
+        let flags: FSEventStreamCreateFlags =
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents
+                                   | kFSEventStreamCreateFlagNoDefer)
+        guard let stream = FSEventStreamCreate(
+            kCFAllocatorDefault,
+            callback,
+            &context,
+            paths,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+            1.0,
+            flags
+        ) else { return }
+        FSEventStreamSetDispatchQueue(
+            stream, DispatchQueue.global(qos: .utility)
+        )
+        FSEventStreamStart(stream)
+        eventStream = stream
+    }
+
+    private func stopFileSystemWatcher() {
+        if let stream = eventStream {
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
         }
-        source.resume()
-        fsWatcher = source
+        eventStream = nil
+    }
+
+    /// Re-arm the FS event stream from scratch. Even FSEventStream can
+    /// silently stop delivering after extended sleep — we don't trust any
+    /// single layer to survive every macOS power-management edge case.
+    private func restartFileSystemWatcher() {
+        stopFileSystemWatcher()
+        startFileSystemWatcher()
     }
 
     /// Many file events can arrive in <1 s while a JSONL is being written.
@@ -150,31 +203,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.refresh()
             }
         }
-    }
-
-    /// Tear down the FS watcher and start a fresh one. The DispatchSource
-    /// file-descriptor can become stale across long sleeps or after the
-    /// directory is moved, and a "dead" watcher is silent — no events,
-    /// no errors, no logs. Re-arming on every wake makes the failure
-    /// mode self-healing.
-    private func restartFileSystemWatcher() {
-        fsWatcher?.cancel()
-        fsWatcher = nil
-        // The cancel handler closes the fd, but on the off chance it
-        // didn't run (cancellation race), close it here too.
-        if watcherFD >= 0 {
-            close(watcherFD)
-            watcherFD = -1
-        }
-        startFileSystemWatcher()
-    }
-
-    /// Tear down the polling Timer and start a fresh one. Same rationale
-    /// as the FS watcher — Timer can become orphaned across sleep.
-    private func restartRefreshTimer() {
-        refreshTimer?.invalidate()
-        refreshTimer = nil
-        startRefreshTimer()
     }
 
     private func registerSystemNotifications() {
